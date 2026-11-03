@@ -117,6 +117,7 @@ summary{padding:8px 0}
     <div class="row" style="margin-top:6px"><button id="addBtn">➕ Add GIFs, videos, sounds</button><button id="mgBtn">🗂 Manage</button></div>
     <input type="file" id="files" multiple accept="image/*,video/*,audio/*" hidden>
     <div id="manage" class="hidden card" style="margin-top:10px"></div>
+    <p class="small-note">Everything you send is also kept on this iPad as a backup, so it can be restored to the TV.</p>
 
     <h2>Screen</h2>
     <div class="row">
@@ -242,18 +243,22 @@ function draw(){
 function drawManage(){
   const el=$('manage');if(el.classList.contains('hidden')||!st)return;
   const catOpts=sel=>st.cats.map(([k,e,n])=>`<option value="${esc(k)}"${k===sel?' selected':''}>${e} ${esc(n)}</option>`).join('');
-  el.innerHTML=st.items.length?st.items.map(i=>`<div class="mrow" data-id="${esc(i[0])}"><span class="nm2">${i[3]==='video'?'🎬':i[3]==='audio'?'🔊':'🖼'} ${esc(i[1])}</span><select data-cat>${catOpts(i[2])}</select><button data-play>▶</button><button data-del>🗑</button></div>`).join(''):'<span class="small-note">No clips yet. Tap “Add” to send some to the TV.</span>';
+  const have=new Set(st.items.map(i=>i[0])),miss=st.items.length>=(st.nc||0)?lib.filter(c=>!have.has('r'+c.cid)).length:0;
+  const sig=JSON.stringify([st.items,st.cats,miss]);if(el._sig===sig)return;el._sig=sig;
+  el.innerHTML=(miss?`<button id="restoreBtn" style="width:100%;margin-bottom:8px">♻️ Restore ${miss} missing clip${miss>1?'s':''} to the TV</button>`:'')+(st.items.length?st.items.map(i=>`<div class="mrow" data-id="${esc(i[0])}"><span class="nm2">${i[3]==='video'?'🎬':i[3]==='audio'?'🔊':'🖼'} ${esc(i[1])}</span><select data-cat>${catOpts(i[2])}</select><button data-play>▶</button><button data-del>🗑</button></div>`).join(''):'<span class="small-note">No clips yet. Tap “Add” to send some to the TV.</span>');
 }
 $('mgBtn').onclick=()=>{$('manage').classList.toggle('hidden');drawManage();};
 $('manage').addEventListener('click',e=>{
+  if(e.target.closest('#restoreBtn')){restoreMissing();return;}
   const row=e.target.closest('.mrow');if(!row)return;
   if(e.target.closest('[data-play]'))send('react',row.dataset.id);
   const del=e.target.closest('[data-del]');
-  if(del){if(del.dataset.sure){send('cdel',row.dataset.id);toast('Deleting…');}
+  if(del){if(del.dataset.sure){send('cdel',row.dataset.id);toast('Deleting…');const cid=row.dataset.id.slice(1);lib=lib.filter(c=>c.cid!==cid);lrun('readwrite',s=>s.delete(cid)).catch(()=>{});}
     else{del.dataset.sure=1;del.textContent='Sure?';setTimeout(()=>{del.dataset.sure='';del.textContent='🗑';},2500);}}
 });
 $('manage').addEventListener('change',e=>{
-  const row=e.target.closest('.mrow');if(row&&e.target.matches('[data-cat]'))send('ccat',{id:row.dataset.id,cat:e.target.value});});
+  const row=e.target.closest('.mrow');if(row&&e.target.matches('[data-cat]'))send('ccat',{id:row.dataset.id,cat:e.target.value});
+    const c=lib.find(x=>'r'+x.cid===row.dataset.id);if(c){c.cat=e.target.value;lrun('readwrite',s=>s.put(c)).catch(()=>{});}});
 
 /* ---- sending clips to the TV (encrypted before upload) ---- */
 $('addBtn').onclick=()=>{if(!st){toast('Waiting for the TV to connect');return;}$('files').click();};
@@ -279,12 +284,33 @@ function openSheet(files){
     $('sheet').classList.add('hidden');toast(`Sent ${n}. They appear once the TV saves them.`);
   };
 }
-async function sendClip(file,meta){
+/* iPad-side library: every clip sent is kept here too, so the TV can be restored */
+const ldb=()=>new Promise((res,rej)=>{const q=indexedDB.open('ccremote',1);q.onupgradeneeded=()=>q.result.createObjectStore('lib',{keyPath:'cid'});q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});
+async function lrun(mode,fn){const db=await ldb();return new Promise((res,rej)=>{const tx=db.transaction('lib',mode);const rq=fn(tx.objectStore('lib'));
+  tx.oncomplete=()=>{db.close();res(rq&&rq.result);};tx.onerror=tx.onabort=()=>{db.close();rej(tx.error);};});}
+let lib=[];
+async function loadLib(){try{lib=(await lrun('readonly',s=>s.getAll()))||[];}catch(e){lib=[];}if(st)drawManage();}
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
+loadLib();
+async function restoreMissing(){
+  const have=new Set(st.items.map(i=>i[0])),miss=lib.filter(c=>!have.has('r'+c.cid));
+  if(!miss.length)return;let n=0;
+  for(const c of miss){
+    toast(`Restoring ${n+1} of ${miss.length}…`);
+    try{await sendClip(c.blob,{name:c.name,cat:c.cat,kind:c.kind,mute:c.mute},c.cid);n++;}catch(e){toast('Could not restore everything');return;}}
+  toast(`Sent ${n} to the TV`);
+}
+async function sendClip(file,meta,cid){
+  if(!cid){
+    cid=genId();
+    const rec={cid,name:meta.name,cat:meta.cat,kind:meta.kind,mute:meta.mute,mime:file.type,size:file.size,blob:file,added:Date.now()};
+    try{await lrun('readwrite',s=>s.put(rec));lib.push(rec);}catch(e){}
+  }
   const buf=new Uint8Array(await file.arrayBuffer());
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,buf));
   const body=new Uint8Array(12+ct.length);body.set(iv);body.set(ct,12);
-  const head=await seal({c:'clip',t:Date.now(),id:genId(),from:'ipad',...meta,mime:file.type,size:buf.length},key);
+  const head=await seal({c:'clip',t:Date.now(),id:genId(),cid,from:'ipad',...meta,mime:file.type,size:buf.length},key);
   const r=await fetch(relayBase()+'/'+topic,{method:'PUT',body,headers:{'X-Message':head,'X-Filename':'clip.bin','Content-Type':'application/octet-stream'}});
   if(!r.ok)throw new Error('upload '+r.status);
 }

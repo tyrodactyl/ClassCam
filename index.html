@@ -260,7 +260,7 @@ const WORKER_SRC=[
 "  importScripts(m.mp+'/vision_bundle.cjs');",
 "  var FR=exports.FilesetResolver,OD=exports.ObjectDetector;",
 "  var fs=await FR.forVisionTasks(m.mp+'/wasm');",
-"  var o=function(d){return{baseOptions:{modelAssetPath:m.model,delegate:d},scoreThreshold:0.2,maxResults:80,runningMode:'IMAGE',categoryAllowlist:['person','cell phone']};};",
+"  var o=function(d){return{baseOptions:{modelAssetPath:m.model,delegate:d},scoreThreshold:0.2,maxResults:80,runningMode:'IMAGE',categoryAllowlist:['person','cell phone','remote','book','laptop','mouse','keyboard']};};",
 "  try{det=await OD.createFromOptions(fs,o('GPU'));}catch(err){det=await OD.createFromOptions(fs,o('CPU'));}",
 "  postMessage({type:'ready'});",
 " }catch(err){postMessage({type:'error',msg:String(err&&err.message||err)});}}",
@@ -297,7 +297,7 @@ async function initDetector(forceMain=false){
   try{
     const {FilesetResolver,ObjectDetector}=await import(MP+'/vision_bundle.mjs');
     const fileset=await FilesetResolver.forVisionTasks(MP+'/wasm');
-    const opts=d=>({baseOptions:{modelAssetPath:MODELS[S.model]||MODELS.lite0,delegate:d},scoreThreshold:.2,maxResults:80,runningMode:'IMAGE',categoryAllowlist:['person','cell phone']});
+    const opts=d=>({baseOptions:{modelAssetPath:MODELS[S.model]||MODELS.lite0,delegate:d},scoreThreshold:.2,maxResults:80,runningMode:'IMAGE',categoryAllowlist:['person','cell phone','remote','book','laptop','mouse','keyboard']});
     try{detMain=await ObjectDetector.createFromOptions(fileset,opts('GPU'));}
     catch(e){detMain=await ObjectDetector.createFromOptions(fileset,opts('CPU'));}
     backend='main';detStatus='ready';status('Vision ready ✓ (basic mode)');
@@ -325,12 +325,14 @@ async function detectRegion(sx,sy,sw,sh,outW){
   }else return [];
   return dets.map(d=>({c:d.c,s:d.s,x:d.x*sc+sx,y:d.y*sc+sy,w:d.w*sc,h:d.h*sc}));
 }
+const VETO=new Set(['remote','book','laptop','mouse','keyboard']);   // things the model confuses with phones
 function split(dets){
-  const pp=[],ph=[];
+  const pp=[],ph=[],vt=[];
   for(const d of dets){const o={x:d.x,y:d.y,w:d.w,h:d.h,s:d.s};
     if(d.c==='person'&&d.s>=S.personMin)pp.push(o);
-    else if(d.c==='cell phone'&&d.s>=S.phoneMin)ph.push(o);}
-  return{pp,ph};
+    else if(d.c==='cell phone'&&d.s>=S.phoneMin)ph.push(o);
+    else if(VETO.has(d.c)&&d.s>=.3)vt.push(o);}
+  return{pp,ph,vt};
 }
 function iou(a,b){const x1=Math.max(a.x,b.x),y1=Math.max(a.y,b.y),x2=Math.min(a.x+a.w,b.x+b.w),y2=Math.min(a.y+a.h,b.y+b.h);const i=Math.max(0,x2-x1)*Math.max(0,y2-y1);return i/(a.w*a.h+b.w*b.h-i+1e-6);}
 function nms(list,thr){const out=[];for(const b of [...list].sort((a,b)=>b.s-a.s))if(!out.some(o=>iou(o,b)>thr))out.push(b);return out;}
@@ -340,30 +342,83 @@ function notIgnored(b){
   return !zones.some(z=>cx>=z.x&&cx<=z.x+z.w&&cy>=z.y&&cy<=z.y+z.h);
 }
 
-let detBusy=false,tileCache=[],tileAt=0;
+let detBusy=false,lastFull=0,crCursor=0;
+/*TRK-START*/
+// Phone tracking: close-up scans around each student feed "tracks"; a phone only counts once it is confirmed.
+let tracks=[],phoneCands=[];
+function personRegion(b,vw,vh){
+  const x0=clamp(b.x-b.w*.35,0,vw-64),y0=clamp(b.y+b.h*.1,0,vh-64);
+  const x1=clamp(b.x+b.w*1.35,x0+64,vw),y1=clamp(b.y+b.h*1.45,y0+64,vh);
+  return{x:x0,y:y0,w:x1-x0,h:y1-y0};
+}
+function ownerOf(d,vw,vh){
+  const cx=d.x+d.w/2,cy=d.y+d.h/2;let best=null,bd=1e9;
+  for(const p of persons){const r=personRegion(p,vw,vh);
+    if(cx>=r.x&&cx<=r.x+r.w&&cy>=r.y&&cy<=r.y+r.h){const dd=Math.hypot(cx-(p.x+p.w/2),cy-(p.y+p.h/2));if(dd<bd){bd=dd;best=p;}}}
+  return best;
+}
+function plausible(d,ref,vh){
+  const lo=Math.max(d.w,d.h),sh=Math.min(d.w,d.h);
+  if(sh<8||lo/sh>3.6)return false;                 // phones are roughly 1:1.5 to 1:2.5, even when tilted
+  const H=ref?ref.h:vh*.5;
+  return lo>=Math.max(12,H*.035)&&lo<=H*.4;       // sensible size compared with the student
+}
+function observe(phs,vts,now,region){
+  const vw=cam.videoWidth,vh=cam.videoHeight,seen=new Set();
+  for(const d of phs){
+    if(!notIgnored(d))continue;
+    const own=ownerOf(d,vw,vh);
+    if(persons.length&&!own)continue;               // a phone far from every student is probably something else
+    if(!plausible(d,own,vh))continue;
+    if(vts.some(v=>v.s>=d.s-.05&&iou(v,d)>.4))continue;   // looks more like a remote, book, laptop...
+    const cx=d.x+d.w/2,cy=d.y+d.h/2,lim=Math.max(d.w,d.h)*.9;let t=null,bd=1e9;
+    for(const k of tracks){const dd=Math.hypot(k.cx-cx,k.cy-cy);if(dd<lim&&dd<bd){bd=dd;t=k;}}
+    if(t){t.x=d.x;t.y=d.y;t.w=d.w;t.h=d.h;t.cx=cx;t.cy=cy;t.s=d.s;t.best=Math.max(t.best,d.s);t.hits++;t.miss=0;t.last=now;}
+    else{t={x:d.x,y:d.y,w:d.w,h:d.h,cx,cy,s:d.s,best:d.s,hits:1,miss:0,last:now,conf:false};tracks.push(t);}
+    if(t.hits>=2||t.best>=.6)t.conf=true;
+    seen.add(t);
+  }
+  if(region)for(const k of tracks){   // a close-up scan covered this spot and found nothing
+    if(!seen.has(k)&&k.cx>=region.x&&k.cx<=region.x+region.w&&k.cy>=region.y&&k.cy<=region.y+region.h)k.miss++;}
+}
+function settleTracks(now){
+  tracks=tracks.filter(k=>k.miss<2&&now-k.last<(k.conf?30000:12000));
+  phones=tracks.filter(k=>k.conf).map(k=>({x:k.x,y:k.y,w:k.w,h:k.h,s:k.s}));
+  phoneCands=tracks.filter(k=>!k.conf).map(k=>({x:k.x,y:k.y,w:k.w,h:k.h,s:k.s}));
+}
+/*TRK-END*/
 async function sample(withTiles){
   const vw=cam.videoWidth,vh=cam.videoHeight;if(!vw)return;
-  const full=split(await detectRegion(0,0,vw,vh,960));
-  persons=nms(full.pp,.5).filter(notIgnored);
+  if(!persons.length||performance.now()-lastFull>2500){
+    const full=split(await detectRegion(0,0,vw,vh,960));
+    persons=nms(full.pp,.5).filter(notIgnored);lastFull=performance.now();
+    if(S.phonesOn)observe(nms(full.ph,.3),full.vt,performance.now(),null);
+  }
+  if(!S.phonesOn){settleTracks(performance.now());return;}
+  // close-up scans around students: the model sees a phone at full detail instead of a few pixels
+  const ps=[...persons].sort((a,b)=>(a.y-b.y)||(a.x-b.x)),n=Math.min(ps.length,Math.max(3,Math.ceil(ps.length/4)));
+  for(let i=0;i<n;i++){
+    const r=personRegion(ps[(crCursor+i)%ps.length],vw,vh);
+    const res=split(await detectRegion(r.x,r.y,r.w,r.h,Math.min(r.w,480)));
+    observe(nms(res.ph,.3),res.vt,performance.now(),r);
+  }
+  crCursor=ps.length?(crCursor+n)%ps.length:0;
   if(withTiles){
-    const cols=3,rows=2,o=.2,tw=Math.min(vw,vw/cols*(1+o)),th=Math.min(vh,vh/rows*(1+o)),out=[];
+    const cols=3,rows=2,o=.2,tw=Math.min(vw,vw/cols*(1+o)),th=Math.min(vh,vh/rows*(1+o));
     for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
       const sx=clamp(c*vw/cols-vw/cols*o/2,0,vw-tw),sy=clamp(r*vh/rows-vh/rows*o/2,0,vh-th);
-      out.push(...split(await detectRegion(sx,sy,tw,th,tw)).ph);
-    }
-    tileCache=out;tileAt=performance.now();
+      const res=split(await detectRegion(sx,sy,tw,th,tw));observe(nms(res.ph,.3),res.vt,performance.now(),null);}
   }
-  const extra=performance.now()-tileAt<7000?tileCache:[];
-  phones=nms([...full.ph,...extra],.3).filter(notIgnored);
+  settleTracks(performance.now());
 }
 let lastDet=0,lastTile=0;
 function maybeDetect(now){
   if(detBusy||detStatus!=='ready'||!camOK||cam.readyState<2||picking||editing)return;
   if(!S.phonesOn&&!S.debug)return;
   if(now-lastDet<750)return;lastDet=now;
-  const tiles=S.detail&&S.phonesOn&&now-lastTile>3000;if(tiles)lastTile=now;
+  const tiles=S.detail&&S.phonesOn&&now-lastTile>4000;if(tiles)lastTile=now;
   detBusy=true;
-  sample(tiles).then(()=>{phoneHist.push(phones.length);if(phoneHist.length>5)phoneHist.shift();updatePhoneBadge();})
+  sample(tiles).then(()=>{phoneHist.push(phones.length);if(phoneHist.length>4)phoneHist.shift();updatePhoneBadge();})
     .catch(e=>console.error(e)).finally(()=>{detBusy=false;});
 }
 function updatePhoneBadge(){
@@ -605,6 +660,11 @@ function drawOv(t){
     for(const b of cands){const r=toScreen(b);octx.beginPath();rr(octx,r.x,r.y,r.w,r.h,14);octx.stroke();}octx.setLineDash([]);}
   if(S.debug){octx.strokeStyle='#4dd2ff';octx.lineWidth=2;octx.font='16px sans-serif';octx.fillStyle='#4dd2ff';
     for(const b of persons){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText(Math.round(b.s*100)+'%',r.x+4,r.y+18);}}
+  if(S.debug&&S.phonesOn){octx.font='15px sans-serif';
+    octx.strokeStyle='#c77dff';octx.fillStyle='#c77dff';octx.lineWidth=2;octx.setLineDash([6,5]);
+    for(const b of phoneCands){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText('? '+Math.round(b.s*100)+'%',r.x,r.y-4);}
+    octx.setLineDash([]);octx.strokeStyle='#ff9f1c';octx.fillStyle='#ff9f1c';
+    for(const b of phones){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText('📱 '+Math.round(b.s*100)+'%',r.x,r.y-4);}}
   if(S.phonesOn&&S.phoneBoxes){octx.strokeStyle='#ffb020';octx.lineWidth=3;
     for(const b of phones){const r=toScreen(b);octx.strokeRect(r.x-6,r.y-6,r.w+12,r.h+12);}}
   if(!spot)return;
@@ -767,7 +827,7 @@ const TB=[
     {l:'⚡ Lightning',keep:1,fn:lightning},
     {l:'❄️ Snow',keep:1,fn:snow},
     {l:'🧹 Clear',fn:()=>{FX=[];}}]);}},
-  {id:'phones',e:'📱',t:()=>'Phones '+(S.phonesOn?'On':'Off'),on:()=>S.phonesOn,fn(){S.phonesOn=!S.phonesOn;phoneHist=[];phones=[];save();updatePhoneBadge();render();}},
+  {id:'phones',e:'📱',t:()=>'Phones '+(S.phonesOn?'On':'Off'),on:()=>S.phonesOn,fn(){S.phonesOn=!S.phonesOn;phoneHist=[];phones=[];tracks=[];phoneCands=[];save();updatePhoneBadge();render();}},
   {id:'cam',e:'🎥',t:()=>CAMLABEL[S.camMode],fn(){S.camMode=(S.camMode+2)%3;save();applyCam();render();}},
   {id:'set',e:'⚙️',t:'Settings',fn:togglePanel},
   {id:'full',e:'⛶',t:'Fullscreen',fn:toggleFs}];
@@ -792,14 +852,14 @@ const SLIDERS=[
   ['loud','Red / "too loud" starts at',.4,.98,.02,v=>Math.round(v*100)+'%'],
   ['loudSecs','Too-loud warning after',1,8,.5,v=>v+' s'],
   ['personMin','Student detection confidence',.2,.8,.05,v=>Math.round(v*100)+'%'],
-  ['phoneMin','Phone detection confidence',.1,.7,.05,v=>Math.round(v*100)+'%'],
+  ['phoneMin','Phone sensitivity (lower finds more, more false alarms)',.1,.7,.05,v=>Math.round(v*100)+'%'],
   ['reactCooldown','Time between reactions',5,120,5,v=>v+' s'],
   ['reactSecs','How long a reaction stays',2,10,1,v=>v+' s']];
 const CHECKS=[
   ['showSeats','Show seat names on screen'],
-  ['detail','High-detail phone scan (slower, finds smaller phones)'],
+  ['detail','Also scan the whole room in tiles (slower; phones are already checked close-up at every student)'],
   ['phoneBoxes','Show phone locations on screen (off = count only)'],
-  ['debug','Show detection boxes (for tuning)']];
+  ['debug','Show detection boxes (purple = unsure, orange = counted)']];
 function buildPanel(){
   const sl=k=>SLIDERS.find(s=>s[0]===k);
   const slider=k=>{const [key,lab,mi,ma,st,fmt]=sl(k);return `<label>${lab}: <b id="v_${key}">${fmt(S[key])}</b><input type="range" id="p_${key}" min="${mi}" max="${ma}" step="${st}" value="${S[key]}"></label>`;};
@@ -827,6 +887,7 @@ function buildPanel(){
   <label>Size<select id="p_reactSize"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select></label>
   <button class="btn" id="p_addclip">➕ Add GIFs, videos, images or sounds</button>
   <div id="cliplist"></div>
+  <p class="note" id="storeStatus"></p>
   <p class="note">Your files stay on this device only. Built-in reactions are used for any category you haven’t added clips to. Keep clips classroom-appropriate and about the whole room, never about one student.</p>
   <button class="btn" id="p_reset">↺ Reset settings</button>
   <p class="note">Phone detection is a rough guide, not proof. Use the count as a nudge, not to call out a specific student. No video or audio is recorded or sent anywhere. Seat names are saved only in this browser (use 🪑 Seats → Clear all to remove them).</p>`;
@@ -881,7 +942,16 @@ async function dbRun(mode,fn){const db=await idb();return new Promise((res,rej)=
 const dbAll=()=>dbRun('readonly',s=>s.getAll());
 const dbPut=r=>dbRun('readwrite',s=>s.put(r));
 const dbDel=id=>dbRun('readwrite',s=>s.delete(id));
-async function loadClips(){try{clips=(await dbAll())||[];}catch(e){clips=[];}clips.sort((a,b)=>a.added-b.added);renderClipList();}
+async function updateStorage(){
+  const el=$('storeStatus');
+  try{
+    let p=navigator.storage&&navigator.storage.persisted?await navigator.storage.persisted():false;
+    if(!p&&navigator.storage&&navigator.storage.persist)p=await navigator.storage.persist();
+    const e=navigator.storage&&navigator.storage.estimate?await navigator.storage.estimate():null;
+    if(el)el.textContent=`💾 ${clips.length} saved on this TV${e?` · ${((e.usage||0)/1048576).toFixed(1)} MB used`:''} · ${p?'protected from automatic cleanup':'⚠ the browser could clear these if the TV runs low on space; the iPad keeps a backup copy'}`;
+  }catch(x){if(el)el.textContent='💾 '+clips.length+' saved on this TV';}
+}
+async function loadClips(){try{clips=(await dbAll())||[];}catch(e){clips=[];}clips.sort((a,b)=>a.added-b.added);renderClipList();updateStorage();}
 
 function clearReact(){
   clearTimeout(reactT);const w=curReact;curReact=null;if(!w)return;
@@ -1049,7 +1119,7 @@ function stateObj(){
     ch:S.char,chars:CHARS.map(c=>[c.m[0],c.n]),noise:S.noiseOn,ph:S.phonesOn,phn:S.phonesOn?phones.length:null,
     cam:S.camMode,lvl:Math.round(level*100),mood,
     pk:spot&&spot.mode==='final'?spot.label:null,busy:picking,ra:S.reactAuto,
-    cats:CATS.map(c=>[c.k,c.e,c.n]),items:[]};
+    cats:CATS.map(c=>[c.k,c.e,c.n]),nc:clips.length,items:[]};
   for(const c of clips){
     o.items.push([c.id,String(c.name).slice(0,18),c.cat,c.kind]);
     if(JSON.stringify(o).length>2600){o.items.pop();break;}
@@ -1093,11 +1163,13 @@ async function receiveClip(m,att){
     if(!att||typeof att.url!=='string'||!att.url.startsWith(relayBase()+'/'))return;
     if(!/^(image|video|audio)$/.test(m.kind)||!CATS.some(c=>c.k===m.cat))return;
     if(typeof m.mime!=='string'||!m.mime.startsWith(m.kind+'/')||!(m.size<=15*1048576))return;
+    const cid=typeof m.cid==='string'&&/^[a-z0-9]{6,24}$/.test(m.cid)?m.cid:m.id;
+    if(clips.some(c=>c.id==='r'+cid))return;          // already saved (a restore re-sent it)
     if(clips.length>=60){status('Reaction limit reached (60). Delete some first.',true);return;}
     const r=await fetch(att.url);if(!r.ok)throw new Error('download '+r.status);
     const u=new Uint8Array(await r.arrayBuffer());
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},R.key,u.slice(12));
-    const rec={id:'r'+m.id,name:String(m.name||'clip').slice(0,30),cat:m.cat,kind:m.kind,mute:!!m.mute,blob:new Blob([pt],{type:m.mime}),added:Date.now()};
+    const rec={id:'r'+cid,name:String(m.name||'clip').slice(0,30),cat:m.cat,kind:m.kind,mute:!!m.mute,blob:new Blob([pt],{type:m.mime}),added:Date.now()};
     await dbPut(rec);await loadClips();status('Added “'+rec.name+'” from the iPad');
   }catch(e){status('Could not receive a clip from the iPad',true);}
 }
@@ -1130,7 +1202,7 @@ function bindExtras(){
     const row=e.target.closest('.crow');if(!row||!e.target.matches('[data-cat]'))return;
     const c=clips.find(x=>x.id===row.dataset.id);if(!c)return;c.cat=e.target.value;try{await dbPut(c);}catch(x){}remoteSendState(true);
   };
-  renderClipList();updateRemoteUI();
+  renderClipList();updateRemoteUI();updateStorage();
 }
 $('clipfile').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length)openAddClips(f);});
 loadClips();
