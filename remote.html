@@ -10,7 +10,8 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0d1020">
 <title>ClassCam Remote</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="assets/app-icon-180.png">
+<link rel="apple-touch-icon" href="assets/app-icon-180.png">
 <style>
 :root{--bg:#0d1020;--card:#171b30;--card2:#20263f;--line:#2e3558;--txt:#f3f5ff;--dim:#9aa3c7;--acc:#5b8cff;--ok:#43d17a;--warn:#ffc84a;--bad:#ff5d6c}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -50,6 +51,7 @@ summary{padding:8px 0}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#000c;border:1px solid var(--line);padding:10px 18px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .25s;pointer-events:none}
 .toast.show{opacity:1}
 .stale #main{opacity:.55}
+.fi{width:26px;height:26px;vertical-align:-6px}
 .sheet{position:fixed;inset:0;background:#000b;display:flex;align-items:flex-end;justify-content:center;padding:12px;z-index:20}
 .sheet .card{width:100%;max-width:640px;max-height:88vh;overflow:auto}
 .frow{display:flex;gap:8px;align-items:center;margin:10px 0}
@@ -65,7 +67,7 @@ summary{padding:8px 0}
 <body>
 
 <div id="pairView" class="pair hidden">
-  <h1>🎯 ClassCam Remote</h1>
+  <img src="assets/logo-hugo.png" alt="" style="width:96px;height:96px" onerror="this.remove()"><h1>ClassCam Remote</h1>
   <p>On the TV open ⚙️ Settings → <b>Pair an iPad</b>, then type the code it shows.</p>
   <input type="text" id="code" maxlength="12" placeholder="XXXXX-XXXXX" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text">
   <p class="err" id="perr"></p>
@@ -79,7 +81,7 @@ summary{padding:8px 0}
 
 <div id="mainView" class="hidden">
   <div class="top">
-    <h1>🎯 ClassCam</h1>
+    <h1><img src="assets/logo-hugo.png" alt="" style="width:38px;height:38px;vertical-align:-9px;margin-right:6px" onerror="this.remove()">ClassCam</h1>
     <div class="conn"><span class="dot" id="dot"></span><span id="connTxt">Connecting…</span></div>
   </div>
 
@@ -101,11 +103,11 @@ summary{padding:8px 0}
 
     <h2>Effects</h2>
     <div class="grid">
-      <button data-c="fx" data-v="confetti">🎉 Confetti</button>
-      <button data-c="fx" data-v="fireworks">🎆 Fireworks</button>
-      <button data-c="fx" data-v="lightning">⚡ Lightning</button>
-      <button data-c="fx" data-v="snow">❄️ Snow</button>
-      <button data-c="fx" data-v="clear">🧹 Clear</button>
+      <button data-c="fx" data-v="confetti"><img class="fi" src="assets/fx-confetti.png" alt="" onerror="this.replaceWith('🎉')"> Confetti</button>
+      <button data-c="fx" data-v="fireworks"><img class="fi" src="assets/fx-fireworks.png" alt="" onerror="this.replaceWith('🎆')"> Fireworks</button>
+      <button data-c="fx" data-v="lightning"><img class="fi" src="assets/fx-lightning.png" alt="" onerror="this.replaceWith('⚡')"> Lightning</button>
+      <button data-c="fx" data-v="snow"><img class="fi" src="assets/fx-snow.png" alt="" onerror="this.replaceWith('❄️')"> Snow</button>
+      <button data-c="fx" data-v="clear"><img class="fi" src="assets/fx-clear.png" alt="" onerror="this.replaceWith('🧹')"> Clear</button>
     </div>
 
     <h2>Reactions</h2>

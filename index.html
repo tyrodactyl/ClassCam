@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ClassCam</title>
+<link rel="icon" href="assets/app-icon-180.png">
+<link rel="apple-touch-icon" href="assets/app-icon-180.png">
 <style>
 :root{--gold:#ffd24a;--ink:#f4f6ff;--glass:rgba(14,18,32,.92);--calm:#3ddc97;--warn:#ffb020;--loud:#ff4d5e;--c:var(--calm)}
 *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
@@ -120,6 +122,16 @@ body.editing #seathint{display:block}
 #panel .crow button{padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.12);font-size:16px}
 #panel input[type=text]{width:100%;padding:10px;border-radius:10px;background:#1d2238;color:#fff;border:1px solid #39406a;font-size:16px;margin-top:6px;user-select:text;-webkit-user-select:text}
 
+/* art (Hugo assets) */
+.art{width:46px;height:46px;object-fit:contain;display:block;pointer-events:none}
+.bimg{height:1.15em;width:auto;vertical-align:-.2em}
+.emo img{width:clamp(120px,14vw,230px);height:auto;display:block;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+#meter .mi{width:50px;height:50px;object-fit:contain}
+#streak .si{width:34px;height:34px;object-fit:contain;display:block;margin:0 auto 2px}
+#start .logo{width:clamp(110px,14vw,190px);height:auto;display:block;margin:0 auto 6px}
+#sub .sa{width:34px;height:34px;object-fit:contain;vertical-align:middle;margin-right:8px}
+#seatbar .art{width:40px;height:40px}
+
 /* start screen */
 #start{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(5,7,14,.72);text-align:center;padding:30px}
 #start.gone{display:none}
@@ -146,9 +158,9 @@ body.editing #seathint{display:block}
 <div id="remotePill" class="pill"></div>
 
 <div id="meter" class="off">
-  <div>📢</div>
+  <div id="mtop">📢</div>
   <div id="mtrack"><div id="mfill"></div><i class="mk" id="mkW"></i><i class="mk" id="mkL"></i></div>
-  <div>🔇</div>
+  <div id="mbot">🔇</div>
   <div id="streak"></div>
 </div>
 
@@ -165,7 +177,8 @@ body.editing #seathint{display:block}
 <input type="file" id="clipfile" multiple accept="image/*,video/*,audio/*" hidden>
 <div id="start">
   <div class="card">
-    <h1>🎓 ClassCam</h1>
+    <img class="logo" src="assets/logo-hugo.png" alt="" onerror="this.remove()">
+    <h1>ClassCam</h1>
     <p>Pick a random student, watch the noise level, change the scene, and get a heads-up about possible phones.</p>
     <p>Everything runs in this browser. Nothing is recorded or uploaded. Camera and mic stay on this device, and seat names are saved only in this browser.</p>
     <button id="go">▶ Start</button>
@@ -478,7 +491,7 @@ async function pickStudent(){
   if(detStatus!=='ready'){status(detStatus==='loading'?'Vision model is still loading…':'Vision model unavailable',detStatus==='failed');return;}
   if(!camOK||!cam.videoWidth){status('Camera not available',true);return;}
   picking=true;spot=null;
-  banner('🔎 Finding students…');
+  banner(bi('moment-finding','🔎')+' Finding students…');
   const people=await scanPeople(2);persons=people;
   const vw=cam.videoWidth,vh=cam.videoHeight;
   let list,info='';
@@ -487,10 +500,10 @@ async function pickStudent(){
     list=m.map(p=>({box:p.box,label:p.seat.name,key:'s'+p.seat.id}));
     info=`${list.length} of ${seats.length} seats have a student`;
     if(!list.length){picking=false;
-      banner('😕 No students found at your saved seats<br><small>Has the camera moved? Open 🪑 Seats to check the markers, or lower the confidence in ⚙️ Settings</small><div class="bb"><button data-act="close">OK</button></div>');return;}
+      banner(bi('moment-none','😕')+' No students found at your saved seats<br><small>Has the camera moved? Open 🪑 Seats to check the markers, or lower the confidence in ⚙️ Settings</small><div class="bb"><button data-act="close">OK</button></div>');return;}
   }else{
     if(!people.length){picking=false;
-      banner('😕 No students detected<br><small>Check the camera angle and lighting, or lower the confidence in ⚙️ Settings</small><div class="bb"><button data-act="close">OK</button></div>');return;}
+      banner(bi('moment-none','😕')+' No students detected<br><small>Check the camera angle and lighting, or lower the confidence in ⚙️ Settings</small><div class="bb"><button data-act="close">OK</button></div>');return;}
     labelSeats(people);
     list=people.map(b=>({box:b,label:b.label,key:null}));
   }
@@ -510,7 +523,8 @@ async function pickStudent(){
   if(target.key)pickedKeys.add(target.key);else pickedHist.push(cen(target.box));
   const r=toScreen(target.box);confetti(r.x+r.w/2,r.y+r.h*.3,170);
   const small=[info,reset?'Everyone has had a turn, starting a new round':''].filter(Boolean).join(' · ');
-  banner(`🎯 <b>${esc(target.label)}</b><br>You're up!${small?`<br><small>${esc(small)}</small>`:''}<div class="bb"><button data-act="again">🎲 Pick another</button><button data-act="close">Done</button></div>`);
+  cheer(5000);
+  banner(`${bi('moment-picked','🎯')} <b>${esc(target.label)}</b><br>You're up!${small?`<br><small>${esc(small)}</small>`:''}<div class="bb"><button data-act="again">${bi('moment-again','🎲')} Pick another</button><button data-act="close">${bi('seat-done','✅')} Done</button></div>`);
   picking=false;
   remoteSendState(true);
   setTimeout(()=>autoReact('pick'),700);
@@ -530,20 +544,53 @@ function readNoise(dt){
 }
 async function calibrate(){
   if(!analyser){status('No microphone available',true);return;}
-  banner('🤫 Quiet please… measuring for 3 seconds');
+  banner(bi('moment-loud','🤫')+' Quiet please… measuring for 3 seconds');
   let sum=0,n=0;const t0=performance.now();
   while(performance.now()-t0<3000){await sleep(50);sum+=curDb;n++;}
   S.floorDb=sum/n+3;save();banner('✅ Calibrated to this room',1800);
 }
 
+/* ---------- art: Hugo assets with emoji fallbacks ---------- */
+const ART={};
+const ART_NAMES=['hugo-happy','hugo-irritated','hugo-angry','hugo-sleep','hugo-cheer','logo-hugo',
+  'icon-pick','icon-seats','icon-noise','icon-scene','icon-character','icon-effects','icon-phones','icon-camera','icon-settings','icon-fullscreen',
+  'fx-confetti','fx-fireworks','fx-lightning','fx-snow','fx-clear',
+  'moment-finding','moment-picked','moment-again','moment-none','moment-loud','moment-star',
+  'meter-loud','meter-quiet','meter-streak',
+  'seat-add','seat-zone','seat-auto','seat-roster','seat-skip','seat-stop','seat-clear','seat-done',
+  'sprite-cactus-round','sprite-cactus-tall','sprite-tumbleweed'];
+const art=(n,fb,cls='art')=>ART[n]?`<img class="${cls}" src="assets/${n}.png" alt="">`:fb;
+const bi=(n,fb)=>art(n,fb,'bimg');
+function loadArt(){
+  return Promise.all(ART_NAMES.map(n=>new Promise(r=>{const i=new Image();i.onload=()=>{ART[n]=i;r();};i.onerror=r;i.src='assets/'+n+'.png';})))
+    .then(()=>{applyArt();});
+}
+function applyArt(){
+  $('mtop').innerHTML=art('meter-loud','📢','mi');$('mbot').innerHTML=art('meter-quiet','🔇','mi');
+  setChar();render();if(editing)renderSeatbar();
+}
+
 /* ---------- characters ---------- */
 const CHARS=[
+  {n:'Hugo the Hippo',m:['🦛','😤','😡'],img:['hugo-happy','hugo-irritated','hugo-angry'],l:[['Smooth sailing. I love it.','Quiet and focused. Great work, everyone!','This is a hippo-approved room.'],['Hmm… it’s getting a little loud.','Voices down a notch, friends.'],['Whoa! That’s a hippo-sized racket!','Too loud! Inside voices, please!']]},
   {n:'Sheriff Sam',m:['🤠','😮','😱'],l:[['Peaceful as a prairie sunrise.','Mighty fine work, partner.'],["Things are gettin' rowdy, partner…",'Easy now, folks.'],["Whoa there! Quiet down, y'all!",'This ain’t no stampede!']]},
   {n:'Sir Drake',m:['🐉','🐲','🔥'],l:[['Hmm. Peaceful. I approve.','Even dragons nap quietly.'],['My scales are tingling…','Careful, my temper is rising.'],['I AM BREATHING FIRE!','ROAR! Too loud!']]},
   {n:'Robo-Bot',m:['🤖','👾','🚨'],l:[['All systems calm. Beep boop.','Volume: nominal.'],['Warning: volume rising.','Noise levels: elevated.'],['ALERT! ALERT! TOO LOUD!','Overload imminent!']]},
   {n:'Whiskers',m:['😺','😼','🙀'],l:[['Purrfect quiet.','This is nice. *purrs*'],['My ears are twitching…','Getting a bit loud, hmm?'],['EEEEK! Too loud!!','My whiskers can’t take it!']]}];
 function say(text){const el=$('say');el.textContent=text;el.classList.remove('hide');lastSay=performance.now();clearTimeout(say.t);say.t=setTimeout(()=>el.classList.add('hide'),6000);}
-function setChar(){const c=CHARS[S.char]||CHARS[0];$('emo').textContent=c.m[mood];$('emo').className='emo m'+mood;$('cname').textContent=c.n;}
+let cheerUntil=0,charKey='';
+function charImgKey(){
+  const c=CHARS[S.char]||CHARS[0];if(!c.img)return null;
+  if(performance.now()<cheerUntil)return'hugo-cheer';
+  if(mood===0&&micOK&&S.noiseOn&&quietT>=30)return'hugo-sleep';   // so quiet that Hugo naps
+  return c.img[mood];
+}
+function setChar(){
+  const c=CHARS[S.char]||CHARS[0],k=charImgKey();charKey=k||'';
+  if(k&&ART[k])$('emo').innerHTML=`<img src="assets/${k}.png" alt="">`;else $('emo').textContent=c.m[mood];
+  $('emo').className='emo m'+mood;$('cname').textContent=c.n;
+}
+function cheer(ms=4000){cheerUntil=performance.now()+ms;setChar();setTimeout(()=>{if(performance.now()>=cheerUntil)setChar();},ms+50);}
 function charLine(){const c=CHARS[S.char]||CHARS[0];say(pick(c.l[mood]));}
 
 /* ---------- scenes (ambience) ---------- */
@@ -581,10 +628,15 @@ const THEMES={
       for(const p of P){p.x+=wind*p.v*dt;p.y+=Math.sin(t+p.x*.01)*8*dt;if(p.x>W+10){p.x=-10;p.y=rand(H*.45,H);}c.fillRect(p.x,p.y,p.r*(1+L*4),p.r);}
       weed.x+=wind*.6*dt;weed.rot+=wind*.6*dt/50;if(weed.x>W+100)weed.x=-100;
       const by=H*.86-Math.abs(Math.sin(t*3))*40*(.3+L);
-      c.save();c.translate(weed.x,by);c.rotate(weed.rot);c.strokeStyle='#7b5a2e';c.lineWidth=3;
-      for(let i=0;i<4;i++){c.rotate(Math.PI/4);c.beginPath();c.ellipse(0,0,38,22,0,0,6.28);c.stroke();}
+      c.save();c.translate(weed.x,by);c.rotate(weed.rot);
+      if(ART['sprite-tumbleweed'])c.drawImage(ART['sprite-tumbleweed'],-50,-50,100,100);
+      else{c.strokeStyle='#7b5a2e';c.lineWidth=3;for(let i=0;i<4;i++){c.rotate(Math.PI/4);c.beginPath();c.ellipse(0,0,38,22,0,0,6.28);c.stroke();}}
       c.restore();
-      c.font='72px serif';c.fillText('🌵',W*.08,H*.93);c.fillText('🌵',W*.86,H*.95);}},
+      if(ART['sprite-cactus-tall']&&ART['sprite-cactus-round']){
+        c.drawImage(ART['sprite-cactus-tall'],W*.04,H*.985-200,130,200);
+        c.drawImage(ART['sprite-cactus-round'],W*.87,H*.985-115,115,115);
+        c.drawImage(ART['sprite-cactus-tall'],W*.93,H*.985-150,96,150);}
+      else{c.font='72px serif';c.fillText('🌵',W*.08,H*.93);c.fillText('🌵',W*.86,H*.95);}}},
   ocean:{name:'Ocean Deep',emoji:'🌊',bg:'linear-gradient(#0a4a73,#06304f 60%,#03182b)',
     init(){P=Array.from({length:60},()=>({x:rand(0,W),y:rand(0,H),r:rand(3,14),v:rand(20,60),w:rand(0,6.28)}));},
     draw(c,dt,L,t){c.strokeStyle='rgba(200,240,255,.5)';c.lineWidth=2;
@@ -603,7 +655,9 @@ const THEMES={
       c.globalCompositeOperation='source-over';}},
   none:{name:'No scene',emoji:'⬜',bg:'#07090f',init(){P=[];},draw(){}}
 };
-function initTheme(){const th=THEMES[S.theme]||THEMES.forest;th.init();$('bg').style.background=th.bg;}
+const BGIMG={forest:'bg-forest',storm:'bg-storm',space:'bg-space',west:'bg-west',ocean:'bg-ocean',party:'bg-party'};
+function initTheme(){const th=THEMES[S.theme]||THEMES.forest;th.init();
+  const b=BGIMG[S.theme];$('bg').style.background=b?`url(assets/${b}.jpg) center/cover no-repeat, ${th.bg}`:th.bg;}
 function setTheme(k){S.theme=k;save();initTheme();render();}
 
 /* ---------- event effects ---------- */
@@ -692,17 +746,18 @@ function updateUI(dt,now){
   $('mkW').style.bottom=(S.warn*100)+'%';$('mkL').style.bottom=(S.loud*100)+'%';
   if(m!==mood||(on&&m===0&&now-lastSay>28000)){const prev=mood;mood=m;setChar();
     if(on&&$('start').classList.contains('gone')){charLine();if(prev===0&&m===1)autoReact('warn');}}
+  {const k=charImgKey();if((k||'')!==charKey)setChar();}
   $('vig').style.opacity=on?clamp((level-S.warn)/(1-S.warn),0,1)*.85:0;
   const amp=on?Math.max(0,(level-S.loud)/(1-S.loud))*16:0;
   $('world').style.transform=amp>.5?`translate(${rand(-amp,amp)}px,${rand(-amp,amp)}px) scale(1.03)`:'';
   if(on&&level>S.loud&&now>=heldUntil)loudT+=dt;else loudT=Math.max(0,loudT-dt*2);
   if(loudT>S.loudSecs&&now>loudCool){loudCool=now+8000;loudT=0;
-    banner('🤫 <b>Too loud!</b>',2600);charLine();if(S.theme==='storm')lightning();autoReact('loud');}
+    banner(bi('moment-loud','🤫')+' <b>Too loud!</b>',2600);charLine();if(S.theme==='storm')lightning();autoReact('loud');}
   if(on&&level<S.warn*.6)quietT+=dt;else if(level>S.warn)quietT=0;
   const q=Math.floor(quietT);
-  $('streak').textContent=on&&q>=10?`🕊️ quiet\n${Math.floor(q/60)}:${String(q%60).padStart(2,'0')}`:'';
-  $('streak').style.whiteSpace='pre';
-  if(on&&q>=60&&Math.floor(q/60)>lastMinute){lastMinute=Math.floor(q/60);confetti(W*.5,H*.7,60);autoReact('quiet');say(`⭐ ${lastMinute} minute${lastMinute>1?'s':''} of quiet!`);}
+  {const el=$('streak'),txt=on&&q>=10?`${Math.floor(q/60)}:${String(q%60).padStart(2,'0')}`:'';
+    if(txt!==el._t){el._t=txt;el.innerHTML=txt?art('meter-streak','🕊️','si')+'quiet<br>'+txt:'';}}
+  if(on&&q>=60&&Math.floor(q/60)>lastMinute){lastMinute=Math.floor(q/60);confetti(W*.5,H*.7,60);cheer();autoReact('quiet');say(`⭐ ${lastMinute} minute${lastMinute>1?'s':''} of quiet!`);}
   if(q<60)lastMinute=0;
   const db=$('dbRead');if(db)db.textContent=micOK?`${curDb.toFixed(0)} dB  (${Math.round(level*100)}%)`:'no mic';
 }
@@ -744,9 +799,10 @@ function openClearDialog(){
 }
 function renderSeatbar(){
   const btns=[['tool-seat','➕','Seats',tool==='seat'],['tool-zone','🚫','Ignore zone',tool==='zone'],['auto','🧍','Auto-add'],['roster','📝','Roster']];
+  const SI={'tool-seat':'seat-add','tool-zone':'seat-zone',auto:'seat-auto',roster:'seat-roster',skip:'seat-skip',stopq:'seat-stop',clear:'seat-clear',done:'seat-done'};
   if(queue.length)btns.push(['skip','⏭','Skip name'],['stopq','⏹','Stop roster']);
   btns.push(['clear','🗑','Clear all'],['done','✅','Done']);
-  $('seatbar').innerHTML=btns.map(([id,e,t,on])=>`<button data-sb="${id}" class="${on?'on':''}"><span class="e">${e}</span><span class="t">${t}</span></button>`).join('');
+  $('seatbar').innerHTML=btns.map(([id,e,t,on])=>`<button data-sb="${id}" class="${on?'on':''}"><span class="e">${art(SI[id],e)}</span><span class="t">${t}</span></button>`).join('');
   $('seathint').textContent=queue.length?`Tap where ${queue[0]} sits (${queue.length} name${queue.length>1?'s':''} left)`
     :tool==='zone'?'Drag a box over areas to ignore, like where you stand. Tap a box to remove it.'
     :`Tap each student to add a seat. Tap a marker to rename or delete it. ${seats.length} seat${seats.length===1?'':'s'} so far.`;
@@ -816,23 +872,23 @@ editLayer.addEventListener('pointercancel',()=>{drag=null;});
 const CAMLABEL=['Camera: Hidden','Camera: Dim','Camera: Full'];
 function applyCam(){cam.style.opacity=[0,.5,1][S.camMode];}
 const TB=[
-  {id:'pick',e:'🎯',t:'Pick Student',cls:'pickbtn',fn:pickStudent},
-  {id:'seats',e:'🪑',t:'Seats',fn:enterEdit},
-  {id:'noise',e:'🔊',t:()=>'Noise '+(S.noiseOn?'On':'Off'),on:()=>S.noiseOn,fn(){S.noiseOn=!S.noiseOn;save();render();}},
-  {id:'scene',e:'🌄',t:'Scene',fn(){sub(Object.entries(THEMES).map(([k,v])=>({l:v.emoji+' '+v.name,a:S.theme===k,fn:()=>setTheme(k)})));}},
-  {id:'char',e:'🧙',t:'Character',fn(){sub(CHARS.map((c,i)=>({l:c.m[0]+' '+c.n,a:S.char===i,fn(){S.char=i;save();setChar();charLine();render();}})));}},
-  {id:'fx',e:'✨',t:'Effects',fn(){sub([
-    {l:'🎉 Confetti',keep:1,fn:()=>confetti(W/2,H*.75,220)},
-    {l:'🎆 Fireworks',keep:1,fn:fireworks},
-    {l:'⚡ Lightning',keep:1,fn:lightning},
-    {l:'❄️ Snow',keep:1,fn:snow},
-    {l:'🧹 Clear',fn:()=>{FX=[];}}]);}},
-  {id:'phones',e:'📱',t:()=>'Phones '+(S.phonesOn?'On':'Off'),on:()=>S.phonesOn,fn(){S.phonesOn=!S.phonesOn;phoneHist=[];phones=[];tracks=[];phoneCands=[];save();updatePhoneBadge();render();}},
-  {id:'cam',e:'🎥',t:()=>CAMLABEL[S.camMode],fn(){S.camMode=(S.camMode+2)%3;save();applyCam();render();}},
-  {id:'set',e:'⚙️',t:'Settings',fn:togglePanel},
-  {id:'full',e:'⛶',t:'Fullscreen',fn:toggleFs}];
+  {id:'pick',ic:'icon-pick',e:'🎯',t:'Pick Student',cls:'pickbtn',fn:pickStudent},
+  {id:'seats',ic:'icon-seats',e:'🪑',t:'Seats',fn:enterEdit},
+  {id:'noise',ic:'icon-noise',e:'🔊',t:()=>'Noise '+(S.noiseOn?'On':'Off'),on:()=>S.noiseOn,fn(){S.noiseOn=!S.noiseOn;save();render();}},
+  {id:'scene',ic:'icon-scene',e:'🌄',t:'Scene',fn(){sub(Object.entries(THEMES).map(([k,v])=>({l:v.emoji+' '+v.name,a:S.theme===k,fn:()=>setTheme(k)})));}},
+  {id:'char',ic:'icon-character',e:'🧙',t:'Character',fn(){sub(CHARS.map((c,i)=>({l:(c.img&&ART[c.img[0]]?art(c.img[0],'','sa'):c.m[0]+' ')+c.n,a:S.char===i,fn(){S.char=i;save();setChar();charLine();render();}})));}},
+  {id:'fx',ic:'icon-effects',e:'✨',t:'Effects',fn(){sub([
+    {l:art('fx-confetti','🎉','sa')+'Confetti',keep:1,fn:()=>confetti(W/2,H*.75,220)},
+    {l:art('fx-fireworks','🎆','sa')+'Fireworks',keep:1,fn:fireworks},
+    {l:art('fx-lightning','⚡','sa')+'Lightning',keep:1,fn:lightning},
+    {l:art('fx-snow','❄️','sa')+'Snow',keep:1,fn:snow},
+    {l:art('fx-clear','🧹','sa')+'Clear',fn:()=>{FX=[];}}]);}},
+  {id:'phones',ic:'icon-phones',e:'📱',t:()=>'Phones '+(S.phonesOn?'On':'Off'),on:()=>S.phonesOn,fn(){S.phonesOn=!S.phonesOn;phoneHist=[];phones=[];tracks=[];phoneCands=[];save();updatePhoneBadge();render();}},
+  {id:'cam',ic:'icon-camera',e:'🎥',t:()=>CAMLABEL[S.camMode],fn(){S.camMode=(S.camMode+2)%3;save();applyCam();render();}},
+  {id:'set',ic:'icon-settings',e:'⚙️',t:'Settings',fn:togglePanel},
+  {id:'full',ic:'icon-fullscreen',e:'⛶',t:'Fullscreen',fn:toggleFs}];
 function render(){
-  $('tb').innerHTML=TB.map(b=>`<button data-tb="${b.id}" class="${(b.cls||'')+(b.on&&b.on()?' on':'')}"><span class="e">${b.e}</span><span class="t">${typeof b.t==='function'?b.t():b.t}</span></button>`).join('');
+  $('tb').innerHTML=TB.map(b=>`<button data-tb="${b.id}" class="${(b.cls||'')+(b.on&&b.on()?' on':'')}"><span class="e">${art(b.ic,b.e)}</span><span class="t">${typeof b.t==='function'?b.t():b.t}</span></button>`).join('');
 }
 let subItems=[];
 function sub(items){subItems=items;$('sub').innerHTML=items.map((it,i)=>`<button data-sub="${i}" class="${it.a?'on':''}">${it.l}</button>`).join('');}
@@ -1217,6 +1273,7 @@ function resize(){
 addEventListener('resize',resize);
 resize();buildPanel();applyCam();setChar();render();wake();
 requestAnimationFrame(frame);
+loadArt();
 
 $('go').addEventListener('click',async()=>{
   $('go').disabled=true;$('startmsg').textContent='Requesting camera and microphone…';
