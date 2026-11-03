@@ -1051,16 +1051,16 @@ function stateObj(){
     pk:spot&&spot.mode==='final'?spot.label:null,busy:picking,ra:S.reactAuto,
     cats:CATS.map(c=>[c.k,c.e,c.n]),items:[]};
   for(const c of clips){
-    o.items.push([c.id,String(c.name).slice(0,18),c.cat]);
+    o.items.push([c.id,String(c.name).slice(0,18),c.cat,c.kind]);
     if(JSON.stringify(o).length>2600){o.items.pop();break;}
   }
   return o;
 }
 async function onRemoteMsg(raw){
-  let m;
-  try{const j=JSON.parse(raw);if(j.event!=='message'||!j.message)return;m=await unseal(j.message,R.key);}catch(e){return;}   // wrong key or junk: ignore
+  let m,j;
+  try{j=JSON.parse(raw);if(j.event!=='message'||!j.message)return;m=await unseal(j.message,R.key);}catch(e){return;}   // wrong key or junk: ignore
   if(!m||m.from!=='ipad'||typeof m.id!=='string'||R.seen.has(m.id))return;
-  if(Math.abs(Date.now()-m.t)>90000)return;
+  if(Math.abs(Date.now()-m.t)>(m.c==='clip'?600000:90000))return;
   R.seen.add(m.id);if(R.seen.size>200)R.seen.delete(R.seen.values().next().value);
   R.lastIn=Date.now();
   const tb=id=>{const b=TB.find(x=>x.id===id);if(b)b.fn();};
@@ -1078,10 +1078,28 @@ async function onRemoteMsg(raw){
     case'react':playById(m.v);break;
     case'rclear':clearReact();break;
     case'rauto':S.reactAuto=!S.reactAuto;save();{const c=$('c_reactAuto');if(c)c.checked=S.reactAuto;}break;
+    case'clip':await receiveClip(m,j.attachment);break;
+    case'cdel':if(typeof m.v==='string'){try{await dbDel(m.v);}catch(e){}await loadClips();}break;
+    case'ccat':{const c=m.v&&clips.find(x=>x.id===m.v.id);
+      if(c&&CATS.some(k=>k.k===m.v.cat)){c.cat=m.v.cat;try{await dbPut(c);}catch(e){}renderClipList();}break;}
     case'ping':case'hello':break;
     default:return;
   }
   remoteSendState(true);
+}
+/* a clip sent from the iPad: encrypted file attached to a relay message */
+async function receiveClip(m,att){
+  try{
+    if(!att||typeof att.url!=='string'||!att.url.startsWith(relayBase()+'/'))return;
+    if(!/^(image|video|audio)$/.test(m.kind)||!CATS.some(c=>c.k===m.cat))return;
+    if(typeof m.mime!=='string'||!m.mime.startsWith(m.kind+'/')||!(m.size<=15*1048576))return;
+    if(clips.length>=60){status('Reaction limit reached (60). Delete some first.',true);return;}
+    const r=await fetch(att.url);if(!r.ok)throw new Error('download '+r.status);
+    const u=new Uint8Array(await r.arrayBuffer());
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},R.key,u.slice(12));
+    const rec={id:'r'+m.id,name:String(m.name||'clip').slice(0,30),cat:m.cat,kind:m.kind,mute:!!m.mute,blob:new Blob([pt],{type:m.mime}),added:Date.now()};
+    await dbPut(rec);await loadClips();status('Added “'+rec.name+'” from the iPad');
+  }catch(e){status('Could not receive a clip from the iPad',true);}
 }
 function openPairDialog(){
   if(!window.crypto||!crypto.subtle){status('Remote needs https:// or file:// to work',true);return;}
