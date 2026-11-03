@@ -110,6 +110,7 @@ body.editing #seathint{display:block}
 @keyframes rpop{0%{transform:scale(.1) rotate(-14deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
 @keyframes rout{to{transform:scale(.2) rotate(10deg);opacity:0}}
 #remotePill{top:116px}
+#dbgHud{top:164px;font-size:15px;max-width:92vw;border-radius:18px}
 .dbox{max-height:92vh;overflow:auto}
 .drow{display:flex;gap:8px;margin:8px 0;align-items:center}
 .drow input[type=text]{flex:1;min-width:0;width:auto;padding:10px;font-size:16px}
@@ -156,6 +157,7 @@ body.editing #seathint{display:block}
 <div id="status" class="pill"></div>
 <div id="phoneBadge" class="pill"></div>
 <div id="remotePill" class="pill"></div>
+<div id="dbgHud" class="pill"></div>
 
 <div id="meter" class="off">
   <div id="mtop">📢</div>
@@ -338,12 +340,13 @@ async function detectRegion(sx,sy,sw,sh,outW){
   }else return [];
   return dets.map(d=>({c:d.c,s:d.s,x:d.x*sc+sx,y:d.y*sc+sy,w:d.w*sc,h:d.h*sc}));
 }
+let dbg={people:0,raw:0,weak:0,scans:0,rej:{},rejBoxes:[]};   // on-screen diagnostics (Settings → Show detection boxes)
 const VETO=new Set(['remote','book','laptop','mouse','keyboard']);   // things the model confuses with phones
 function split(dets){
   const pp=[],ph=[],vt=[];
   for(const d of dets){const o={x:d.x,y:d.y,w:d.w,h:d.h,s:d.s};
     if(d.c==='person'&&d.s>=S.personMin)pp.push(o);
-    else if(d.c==='cell phone'&&d.s>=S.phoneMin)ph.push(o);
+    else if(d.c==='cell phone'){if(d.s>=S.phoneMin)ph.push(o);else{dbg.weak++;}}
     else if(VETO.has(d.c)&&d.s>=.3)vt.push(o);}
   return{pp,ph,vt};
 }
@@ -355,7 +358,7 @@ function notIgnored(b){
   return !zones.some(z=>cx>=z.x&&cx<=z.x+z.w&&cy>=z.y&&cy<=z.y+z.h);
 }
 
-let detBusy=false,lastFull=0,crCursor=0;
+let detBusy=false,lastFull=0,crCursor=0,lastDbg=null;
 /*TRK-START*/
 // Phone tracking: close-up scans around each student feed "tracks"; a phone only counts once it is confirmed.
 let tracks=[],phoneCands=[];
@@ -366,29 +369,33 @@ function personRegion(b,vw,vh){
 }
 function ownerOf(d,vw,vh){
   const cx=d.x+d.w/2,cy=d.y+d.h/2;let best=null,bd=1e9;
-  for(const p of persons){const r=personRegion(p,vw,vh);
-    if(cx>=r.x&&cx<=r.x+r.w&&cy>=r.y&&cy<=r.y+r.h){const dd=Math.hypot(cx-(p.x+p.w/2),cy-(p.y+p.h/2));if(dd<bd){bd=dd;best=p;}}}
+  for(const p of persons){   // generous area: head to well below the desk, wide on both sides
+    if(cx>=p.x-p.w*.6&&cx<=p.x+p.w*1.6&&cy>=p.y-p.h*.2&&cy<=p.y+p.h*1.8){const dd=Math.hypot(cx-(p.x+p.w/2),cy-(p.y+p.h/2));if(dd<bd){bd=dd;best=p;}}}
   return best;
 }
 function plausible(d,ref,vh){
   const lo=Math.max(d.w,d.h),sh=Math.min(d.w,d.h);
-  if(sh<8||lo/sh>3.6)return false;                 // phones are roughly 1:1.5 to 1:2.5, even when tilted
+  if(sh<6)return'size';
+  if(lo/sh>4.5)return'shape';                      // phones are long and thin, never a wide strip
   const H=ref?ref.h:vh*.5;
-  return lo>=Math.max(12,H*.035)&&lo<=H*.4;       // sensible size compared with the student
+  if(lo<Math.max(10,H*.025)||lo>H*.8)return'size'; // from tiny specks up to nearly as big as a student
+  return'';
 }
+function rejected(d,why){dbg.rej[why]=(dbg.rej[why]||0)+1;if(dbg.rejBoxes.length<30)dbg.rejBoxes.push({x:d.x,y:d.y,w:d.w,h:d.h,s:d.s,why});}
 function observe(phs,vts,now,region){
   const vw=cam.videoWidth,vh=cam.videoHeight,seen=new Set();
   for(const d of phs){
-    if(!notIgnored(d))continue;
+    dbg.raw++;
+    if(!notIgnored(d)){rejected(d,'ignore zone');continue;}
     const own=ownerOf(d,vw,vh);
-    if(persons.length&&!own)continue;               // a phone far from every student is probably something else
-    if(!plausible(d,own,vh))continue;
-    if(vts.some(v=>v.s>=d.s-.05&&iou(v,d)>.4))continue;   // looks more like a remote, book, laptop...
+    if(persons.length&&!own&&d.s<.5){rejected(d,'far from students');continue;}   // strong detections are trusted anywhere
+    const why=plausible(d,own,vh);if(why){rejected(d,why);continue;}
+    if(vts.some(v=>v.s>d.s+.15&&iou(v,d)>.4)){rejected(d,'looks like other');continue;}   // clearly more like a remote, book, laptop...
     const cx=d.x+d.w/2,cy=d.y+d.h/2,lim=Math.max(d.w,d.h)*.9;let t=null,bd=1e9;
     for(const k of tracks){const dd=Math.hypot(k.cx-cx,k.cy-cy);if(dd<lim&&dd<bd){bd=dd;t=k;}}
     if(t){t.x=d.x;t.y=d.y;t.w=d.w;t.h=d.h;t.cx=cx;t.cy=cy;t.s=d.s;t.best=Math.max(t.best,d.s);t.hits++;t.miss=0;t.last=now;}
     else{t={x:d.x,y:d.y,w:d.w,h:d.h,cx,cy,s:d.s,best:d.s,hits:1,miss:0,last:now,conf:false};tracks.push(t);}
-    if(t.hits>=2||t.best>=.6)t.conf=true;
+    if(t.hits>=2||t.best>=.45)t.conf=true;
     seen.add(t);
   }
   if(region)for(const k of tracks){   // a close-up scan covered this spot and found nothing
@@ -402,6 +409,7 @@ function settleTracks(now){
 /*TRK-END*/
 async function sample(withTiles){
   const vw=cam.videoWidth,vh=cam.videoHeight;if(!vw)return;
+  dbg={people:0,raw:0,weak:0,scans:0,rej:{},rejBoxes:[]};
   if(!persons.length||performance.now()-lastFull>2500){
     const full=split(await detectRegion(0,0,vw,vh,960));
     persons=nms(full.pp,.5).filter(notIgnored);lastFull=performance.now();
@@ -412,7 +420,7 @@ async function sample(withTiles){
   const ps=[...persons].sort((a,b)=>(a.y-b.y)||(a.x-b.x)),n=Math.min(ps.length,Math.max(3,Math.ceil(ps.length/4)));
   for(let i=0;i<n;i++){
     const r=personRegion(ps[(crCursor+i)%ps.length],vw,vh);
-    const res=split(await detectRegion(r.x,r.y,r.w,r.h,Math.min(r.w,480)));
+    const res=split(await detectRegion(r.x,r.y,r.w,r.h,Math.min(r.w,480)));dbg.scans++;
     observe(nms(res.ph,.3),res.vt,performance.now(),r);
   }
   crCursor=ps.length?(crCursor+n)%ps.length:0;
@@ -422,7 +430,7 @@ async function sample(withTiles){
       const sx=clamp(c*vw/cols-vw/cols*o/2,0,vw-tw),sy=clamp(r*vh/rows-vh/rows*o/2,0,vh-th);
       const res=split(await detectRegion(sx,sy,tw,th,tw));observe(nms(res.ph,.3),res.vt,performance.now(),null);}
   }
-  settleTracks(performance.now());
+  dbg.people=persons.length;lastDbg=dbg;settleTracks(performance.now());updateHud();
 }
 let lastDet=0,lastTile=0;
 function maybeDetect(now){
@@ -433,6 +441,13 @@ function maybeDetect(now){
   detBusy=true;
   sample(tiles).then(()=>{phoneHist.push(phones.length);if(phoneHist.length>4)phoneHist.shift();updatePhoneBadge();})
     .catch(e=>console.error(e)).finally(()=>{detBusy=false;});
+}
+function updateHud(){
+  const el=$('dbgHud');if(!el)return;
+  if(!S.debug||!S.phonesOn||!lastDbg){el.classList.remove('show');return;}
+  const d=lastDbg,rj=Object.entries(d.rej).map(([k,v])=>k+' '+v).join(', ')||'none';
+  el.textContent=`people ${d.people} · phone boxes ${d.raw} (+${d.weak} too faint) · counted ${phones.length} · unsure ${phoneCands.length} · rejected: ${rj} · close-ups ${d.scans}`;
+  el.classList.add('show');
 }
 function updatePhoneBadge(){
   const el=$('phoneBadge');
@@ -717,6 +732,8 @@ function drawOv(t){
   if(S.debug&&S.phonesOn){octx.font='15px sans-serif';
     octx.strokeStyle='#c77dff';octx.fillStyle='#c77dff';octx.lineWidth=2;octx.setLineDash([6,5]);
     for(const b of phoneCands){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText('? '+Math.round(b.s*100)+'%',r.x,r.y-4);}
+    octx.setLineDash([2,5]);octx.strokeStyle='#ff5d6c';octx.fillStyle='#ff5d6c';
+    for(const b of (lastDbg?lastDbg.rejBoxes:[])){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText(b.why,r.x,r.y+r.h+14);}
     octx.setLineDash([]);octx.strokeStyle='#ff9f1c';octx.fillStyle='#ff9f1c';
     for(const b of phones){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText('📱 '+Math.round(b.s*100)+'%',r.x,r.y-4);}}
   if(S.phonesOn&&S.phoneBoxes){octx.strokeStyle='#ffb020';octx.lineWidth=3;
@@ -915,7 +932,7 @@ const CHECKS=[
   ['showSeats','Show seat names on screen'],
   ['detail','Also scan the whole room in tiles (slower; phones are already checked close-up at every student)'],
   ['phoneBoxes','Show phone locations on screen (off = count only)'],
-  ['debug','Show detection boxes (purple = unsure, orange = counted)']];
+  ['debug','Show detection boxes (orange = counted, purple = unsure, red = rejected)']];
 function buildPanel(){
   const sl=k=>SLIDERS.find(s=>s[0]===k);
   const slider=k=>{const [key,lab,mi,ma,st,fmt]=sl(k);return `<label>${lab}: <b id="v_${key}">${fmt(S[key])}</b><input type="range" id="p_${key}" min="${mi}" max="${ma}" step="${st}" value="${S[key]}"></label>`;};
