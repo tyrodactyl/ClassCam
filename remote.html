@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ClassCam Remote">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d1020">
+<title>ClassCam Remote</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E">
+<style>
+:root{--bg:#0d1020;--card:#171b30;--card2:#20263f;--line:#2e3558;--txt:#f3f5ff;--dim:#9aa3c7;--acc:#5b8cff;--ok:#43d17a;--warn:#ffc84a;--bad:#ff5d6c}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--txt);font:17px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;overscroll-behavior:none}
+body{padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));max-width:900px;margin:0 auto}
+h1{font-size:22px;margin:4px 0 0}
+h2{font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:22px 0 8px;font-weight:700}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.conn{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--dim)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--bad)}
+.dot.ok{background:var(--ok)}.dot.wait{background:var(--warn)}
+button{font:inherit;color:var(--txt);background:var(--card2);border:1px solid var(--line);border-radius:16px;padding:14px 12px;min-height:56px;touch-action:manipulation}
+button:active{transform:scale(.97);background:#2a3254}
+button.on{background:var(--acc);border-color:var(--acc)}
+button:disabled{opacity:.45}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.big{font-size:26px;font-weight:800;min-height:84px;background:linear-gradient(135deg,#5b8cff,#8f5bff);border:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px}
+.picked{text-align:center;padding:18px 10px}
+.picked .nm{font-size:34px;font-weight:900;margin:4px 0 12px}
+.meter{height:26px;border-radius:13px;background:var(--card2);overflow:hidden;border:1px solid var(--line)}
+.meter>i{display:block;height:100%;width:0;background:var(--ok);transition:width .6s,background .6s}
+.cat{margin:12px 0}
+.cat .hd{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{min-height:46px;padding:8px 14px;font-size:15px;border-radius:14px}
+input[type=text]{width:100%;font:inherit;font-size:28px;letter-spacing:.14em;text-align:center;text-transform:uppercase;padding:16px;border-radius:14px;background:var(--card2);color:var(--txt);border:2px solid var(--line)}
+input.small{font-size:16px;letter-spacing:0;text-transform:none;text-align:left}
+.pair{max-width:460px;margin:12vh auto 0;text-align:center}
+.pair p{color:var(--dim)}
+.err{color:var(--bad);min-height:1.4em}
+.hidden{display:none!important}
+details{margin-top:14px;color:var(--dim);text-align:left}
+summary{padding:8px 0}
+.small-note{font-size:13px;color:var(--dim)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#000c;border:1px solid var(--line);padding:10px 18px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+.stale #main{opacity:.55}
+</style>
+</head>
+<body>
+
+<div id="pairView" class="pair hidden">
+  <h1>🎯 ClassCam Remote</h1>
+  <p>On the TV open ⚙️ Settings → <b>Pair an iPad</b>, then type the code it shows.</p>
+  <input type="text" id="code" maxlength="12" placeholder="XXXXX-XXXXX" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text">
+  <p class="err" id="perr"></p>
+  <button class="big" id="pairGo" style="width:100%">Connect</button>
+  <details>
+    <summary>Advanced</summary>
+    <label class="small-note">Relay service (must match the TV)</label>
+    <input type="text" class="small" id="relayIn" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </details>
+</div>
+
+<div id="mainView" class="hidden">
+  <div class="top">
+    <h1>🎯 ClassCam</h1>
+    <div class="conn"><span class="dot" id="dot"></span><span id="connTxt">Connecting…</span></div>
+  </div>
+
+  <div id="main">
+    <h2>Pick a student</h2>
+    <div id="pickBox"></div>
+
+    <h2>Noise</h2>
+    <div class="card">
+      <div class="meter"><i id="lvl"></i></div>
+      <div class="row" style="margin-top:10px">
+        <button id="noiseBtn" data-c="noise">🔊 Noise</button>
+        <button data-c="cal">🤫 Calibrate</button>
+      </div>
+    </div>
+
+    <h2>Scene</h2><div class="grid" id="scenes"></div>
+    <h2>Character</h2><div class="grid" id="chars"></div>
+
+    <h2>Effects</h2>
+    <div class="grid">
+      <button data-c="fx" data-v="confetti">🎉 Confetti</button>
+      <button data-c="fx" data-v="fireworks">🎆 Fireworks</button>
+      <button data-c="fx" data-v="lightning">⚡ Lightning</button>
+      <button data-c="fx" data-v="snow">❄️ Snow</button>
+      <button data-c="fx" data-v="clear">🧹 Clear</button>
+    </div>
+
+    <h2>Reactions</h2>
+    <div class="row">
+      <button id="raBtn" data-c="rauto">🤖 Auto</button>
+      <button data-c="rclear">✖ Hide reaction</button>
+    </div>
+    <div id="cats"></div>
+
+    <h2>Screen</h2>
+    <div class="row">
+      <button id="phBtn" data-c="phones">📱 Phones</button>
+      <button id="camBtn" data-c="cam">🎥 Camera</button>
+    </div>
+    <p class="small-note" id="phNote"></p>
+
+    <h2>This iPad</h2>
+    <button id="forget" style="width:100%">Forget this TV</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const te=new TextEncoder(),td=new TextDecoder();
+const b64=u=>{let s='';for(let i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s);};
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const hex=u=>[...u].map(x=>x.toString(16).padStart(2,'0')).join('');
+const genId=()=>hex(crypto.getRandomValues(new Uint8Array(6)));
+const lsGet=k=>{try{return localStorage.getItem(k)||'';}catch(e){return'';}};
+const lsSet=(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(e){}};
+
+/* ---- same crypto as the TV page ---- */
+async function deriveRemote(code){
+  const norm=String(code).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const base=await crypto.subtle.importKey('raw',te.encode(norm),'PBKDF2',false,['deriveBits']);
+  const bits=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:te.encode('classcam-remote-v1'),iterations:200000,hash:'SHA-256'},base,384));
+  const key=await crypto.subtle.importKey('raw',bits.slice(0,32),'AES-GCM',false,['encrypt','decrypt']);
+  return{key,topic:'cc'+hex(bits.slice(32,48))};
+}
+async function seal(obj,key){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,te.encode(JSON.stringify(obj))));
+  const out=new Uint8Array(12+ct.length);out.set(iv);out.set(ct,12);return b64(out);
+}
+async function unseal(str,key){
+  const u=unb64(str.trim());
+  return JSON.parse(td.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},key,u.slice(12))));
+}
+
+const DEF_RELAY='https://ntfy.sh';
+let relay=lsGet('ccremote_relay')||DEF_RELAY;
+const relayBase=()=>relay.trim().replace(/\/+$/,'');
+let key=null,topic='',es=null,st=null,lastState=0,seen=new Set(),pingT=0,wake=null;
+
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('show'),1400);}
+
+async function send(c,v){
+  if(!key)return;
+  try{
+    const body=await seal({c,v,t:Date.now(),id:genId(),from:'ipad'},key);
+    const r=await fetch(relayBase()+'/'+topic,{method:'POST',body});
+    if(!r.ok)throw new Error(r.status);
+  }catch(e){toast('Could not reach the relay');}
+}
+
+async function connect(code){
+  if(!window.crypto||!crypto.subtle){$('perr').textContent='This page must be opened over https:// to work.';return false;}
+  const d=await deriveRemote(code);key=d.key;topic=d.topic;
+  if(es)es.close();
+  es=new EventSource(relayBase()+'/'+topic+'/sse');
+  es.onopen=()=>{setConn();send('hello');};
+  es.onerror=()=>setConn();
+  es.onmessage=async ev=>{
+    let m;
+    try{const j=JSON.parse(ev.data);if(j.event!=='message'||!j.message)return;m=await unseal(j.message,key);}catch(e){return;}
+    if(!m||m.from!=='tv'||m.k!=='state'||seen.has(m.id))return;
+    if(Math.abs(Date.now()-m.t)>90000)return;
+    seen.add(m.id);if(seen.size>100)seen.delete(seen.values().next().value);
+    st=m;lastState=Date.now();draw();setConn();
+  };
+  clearInterval(pingT);pingT=setInterval(()=>{if(!document.hidden)send('ping');},25000);
+  grabWake();
+  return true;
+}
+function setConn(){
+  const age=(Date.now()-lastState)/1000;
+  const ok=st&&age<30,wait=es&&es.readyState===1;
+  $('dot').className='dot '+(ok?'ok':wait?'wait':'');
+  $('connTxt').textContent=ok?'TV connected':wait?'Waiting for the TV…':'Reconnecting…';
+  document.body.classList.toggle('stale',!ok);
+}
+setInterval(setConn,3000);
+
+async function grabWake(){try{if('wakeLock'in navigator&&!document.hidden)wake=await navigator.wakeLock.request('screen');}catch(e){}}
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&key){grabWake();if(es&&es.readyState===2)connect(lsGet('ccremote_code'));send('hello');}});
+
+/* ---- drawing ---- */
+const CAMN=['Camera hidden','Camera dim','Camera full'];
+function draw(){
+  if(!st)return;
+  // pick box
+  const pb=$('pickBox');
+  if(st.busy)pb.innerHTML='<div class="card picked"><div class="nm">🔎 Picking…</div></div>';
+  else if(st.pk)pb.innerHTML=`<div class="card picked"><div>Picked</div><div class="nm">${esc(st.pk)}</div><div class="row"><button data-c="again">🎲 Pick another</button><button data-c="done">✅ Done</button></div></div>`;
+  else pb.innerHTML='<button class="big" data-c="pick" style="width:100%">🎯 Pick a student</button>';
+  // noise
+  const l=$('lvl');l.style.width=Math.max(2,st.lvl)+'%';l.style.background=st.lvl>75?'var(--bad)':st.lvl>50?'var(--warn)':'var(--ok)';
+  $('noiseBtn').className=st.noise?'on':'';$('noiseBtn').textContent=st.noise?'🔊 Noise on':'🔇 Noise off';
+  // scenes / chars (rebuild only when changed)
+  fill('scenes',st.themes.map(([k,e,n])=>[`data-c="scene" data-v="${esc(k)}"`,e+' '+n,k===st.th]));
+  fill('chars',st.chars.map(([e,n],i)=>[`data-c="char" data-v="${i}"`,e+' '+n,i===st.ch]));
+  // reactions
+  $('raBtn').className=st.ra?'on':'';$('raBtn').textContent=st.ra?'🤖 Auto on':'🤖 Auto off';
+  const key2=JSON.stringify([st.cats,st.items]);
+  if(draw.k!==key2){draw.k=key2;
+    $('cats').innerHTML=st.cats.map(([k,e,n])=>{
+      const its=st.items.filter(i=>i[2]===k);
+      return `<div class="cat"><div class="hd"><span>${e} ${esc(n)}</span><button style="min-height:40px;padding:6px 12px" data-c="react" data-v="cat:${esc(k)}">🎲 Random</button></div>${its.length?`<div class="chips">${its.map(i=>`<button data-c="react" data-v="${esc(i[0])}">${esc(i[1])}</button>`).join('')}</div>`:''}</div>`;}).join('');}
+  // screen
+  $('phBtn').className=st.ph?'on':'';$('phBtn').textContent=st.ph?'📱 Phones on':'📱 Phones off';
+  $('camBtn').textContent='🎥 '+(CAMN[st.cam]||'Camera');
+  $('phNote').textContent=st.ph&&st.phn!=null?`Phones spotted: ${st.phn} (a rough count, only shown here)`:'';
+}
+function fill(id,items){
+  const sig=JSON.stringify(items),el=$(id);if(el._sig===sig)return;el._sig=sig;
+  el.innerHTML=items.map(([attrs,txt,on])=>`<button ${attrs} class="${on?'on':''}">${esc(txt)}</button>`).join('');
+}
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-c]');if(!b)return;
+  send(b.dataset.c,b.dataset.v);
+  if(navigator.vibrate)navigator.vibrate(15);
+  if(b.dataset.c==='pick'||b.dataset.c==='again'){toast('Picking…');}
+});
+$('forget').onclick=()=>{
+  if(!$('forget').dataset.sure){$('forget').dataset.sure=1;$('forget').textContent='Tap again to forget this TV';setTimeout(()=>{$('forget').dataset.sure='';$('forget').textContent='Forget this TV';},3000);return;}
+  lsSet('ccremote_code','');if(es)es.close();es=null;key=null;st=null;clearInterval(pingT);show(false);
+};
+
+/* ---- pairing ---- */
+function show(paired){$('pairView').classList.toggle('hidden',paired);$('mainView').classList.toggle('hidden',!paired);if(!paired){$('relayIn').value=relay;$('code').value='';}}
+$('code').addEventListener('input',e=>{
+  let v=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10);
+  e.target.value=v.length>5?v.slice(0,5)+'-'+v.slice(5):v;});
+async function tryPair(){
+  const raw=$('code').value.replace(/[^A-Za-z0-9]/g,'');
+  if(raw.length!==10){$('perr').textContent='The code has 10 letters and numbers.';return;}
+  $('perr').textContent='';$('pairGo').disabled=true;$('pairGo').textContent='Connecting…';
+  relay=$('relayIn').value.trim()||DEF_RELAY;lsSet('ccremote_relay',relay===DEF_RELAY?'':relay);
+  const ok=await connect(raw);
+  $('pairGo').disabled=false;$('pairGo').textContent='Connect';
+  if(ok){lsSet('ccremote_code',raw.toUpperCase());show(true);}
+}
+$('pairGo').onclick=tryPair;
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter')tryPair();});
+
+(async()=>{
+  const saved=lsGet('ccremote_code');
+  if(saved){show(true);if(!(await connect(saved)))show(false);}
+  else show(false);
+})();
+</script>
+</body>
+</html>

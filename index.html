@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ClassCam</title>
+<style>
+:root{--gold:#ffd24a;--ink:#f4f6ff;--glass:rgba(14,18,32,.92);--calm:#3ddc97;--warn:#ffb020;--loud:#ff4d5e;--c:var(--calm)}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#000;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;border:0;cursor:pointer;background:none}
+#world{position:fixed;inset:0;background:#07090f}
+#bg{position:absolute;inset:0;transition:background 1s}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .5s;opacity:.5}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+#vig{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,rgba(255,30,50,.9) 100%);opacity:0;z-index:10}
+#edit{position:fixed;inset:0;z-index:14;display:none;cursor:crosshair;touch-action:none}
+body.editing #edit{display:block}
+body.editing #tb,body.editing #sub,body.editing #char,body.editing #meter,body.editing #phoneBadge{display:none}
+
+/* status + phone badge */
+.pill{position:fixed;left:20px;z-index:12;padding:10px 18px;border-radius:999px;background:var(--glass);font-size:18px;opacity:0;transition:opacity .4s;pointer-events:none}
+.pill.show{opacity:1}
+#status{top:20px}
+#phoneBadge{top:68px}
+#phoneBadge.alert{background:rgba(255,160,30,.95);color:#1b1200;font-weight:700}
+
+/* noise meter */
+#meter{position:fixed;right:22px;top:50%;transform:translateY(-50%);width:84px;height:62vh;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:12;transition:opacity .4s;font-size:30px}
+#meter.off{opacity:0}
+#mtrack{flex:1;width:36px;border-radius:18px;background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.3);position:relative;overflow:hidden}
+#mfill{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--c);transition:background .3s;border-radius:0 0 16px 16px}
+.mk{position:absolute;left:0;right:0;height:3px;background:rgba(255,255,255,.85)}
+#streak{font-size:15px;text-align:center;min-height:36px;opacity:.9}
+
+/* character */
+#char{position:fixed;left:26px;bottom:150px;z-index:12;display:flex;align-items:flex-end;gap:14px;pointer-events:none;transition:opacity .4s}
+.emo{font-size:clamp(80px,11vw,170px);line-height:1;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+.emo.m0{animation:bob 2.6s ease-in-out infinite}
+.emo.m1{animation:bob 1.1s ease-in-out infinite}
+.emo.m2{animation:shake .28s linear infinite}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-14px) rotate(3deg)}}
+@keyframes shake{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(-6px,3px) rotate(-6deg)}75%{transform:translate(6px,-3px) rotate(6deg)}}
+.say{background:#fff;color:#161a26;padding:14px 22px;border-radius:22px 22px 22px 4px;font-size:clamp(20px,2vw,32px);font-weight:700;max-width:min(440px,38vw);margin-bottom:34px;transition:opacity .4s,transform .4s}
+.say.hide{opacity:0;transform:scale(.9)}
+.cname{position:absolute;left:0;bottom:-26px;font-size:14px;opacity:.8}
+
+/* banner */
+#banner{position:fixed;top:4vh;left:50%;transform:translate(-50%,-30px);background:var(--glass);border:2px solid rgba(255,210,74,.55);border-radius:26px;padding:22px 44px;font-size:clamp(28px,3.4vw,56px);text-align:center;opacity:0;pointer-events:none;transition:.35s;z-index:30;max-width:90vw;line-height:1.25}
+#banner.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#banner small{font-size:.42em;opacity:.8}
+.bb{display:flex;gap:14px;justify-content:center;margin-top:14px}
+.bb button{font-size:20px;padding:12px 24px;border-radius:14px;background:rgba(255,255,255,.14)}
+.bb button:active{background:rgba(255,255,255,.3)}
+
+/* toolbar + seat bar */
+.ui{transition:opacity .4s,transform .4s}
+.ui.hidden{opacity:0;pointer-events:none}
+#tb,#seatbar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:10px;padding:10px;background:var(--glass);border-radius:24px;z-index:20;max-width:98vw;overflow-x:auto}
+#tb button,#seatbar button{min-width:88px;height:86px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:rgba(255,255,255,.07);padding:0 8px;flex:none}
+#tb button:active,#seatbar button:active{background:rgba(255,255,255,.25)}
+#tb button.on,#seatbar button.on{background:rgba(255,210,74,.28);box-shadow:inset 0 0 0 2px var(--gold)}
+#tb .e,#seatbar .e{font-size:32px;line-height:1}
+#tb .t,#seatbar .t{font-size:14px;white-space:nowrap}
+#tb button.pickbtn{background:linear-gradient(135deg,#ffb020,#ff5d73);font-weight:700}
+#seatbar{display:none}
+body.editing #seatbar{display:flex}
+#seathint{position:fixed;left:50%;bottom:128px;transform:translateX(-50%);background:var(--glass);padding:12px 24px;border-radius:999px;font-size:20px;z-index:20;display:none;max-width:92vw;text-align:center}
+body.editing #seathint{display:block}
+#sub{position:fixed;left:50%;bottom:124px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:88vw;z-index:21}
+#sub:empty{display:none}
+#sub button{background:var(--glass);padding:14px 24px;border-radius:999px;font-size:22px;border:2px solid transparent}
+#sub button.on{border-color:var(--gold)}
+
+/* dialogs */
+#dlg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;padding:20px}
+#dlg.show{display:flex}
+.dbox{background:#12172b;border-radius:22px;padding:26px;width:min(520px,94vw);font-size:20px}
+.dbox h3{margin-bottom:14px;font-size:26px}
+.dbox p{font-size:16px;opacity:.8;margin-bottom:12px}
+.dbox input,.dbox textarea{width:100%;font:inherit;padding:14px;border-radius:12px;border:2px solid #39406a;background:#1d2238;color:#fff;user-select:text;-webkit-user-select:text}
+.dbox textarea{height:220px;resize:none}
+.dbox .bb{justify-content:flex-end}
+
+/* settings */
+#panel{position:fixed;left:20px;top:20px;bottom:20px;width:min(420px,92vw);overflow:auto;background:rgba(12,15,28,.96);border-radius:22px;padding:22px;z-index:25;font-size:17px;line-height:1.4}
+#panel.hidden{display:none}
+#panel h2{display:flex;justify-content:space-between;align-items:center;font-size:24px;margin-bottom:8px}
+#panel h3{margin:20px 0 8px;font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold)}
+#panel label{display:block;margin:12px 0 4px}
+#panel select,#panel input[type=range]{width:100%;margin-top:6px}
+#panel select{padding:10px;border-radius:10px;background:#1d2238;color:#fff;border:1px solid #39406a;font-size:16px}
+#panel input[type=range]{accent-color:var(--gold);height:30px}
+#panel .chk{display:flex;gap:10px;align-items:center;margin:12px 0}
+#panel .chk input{width:24px;height:24px;accent-color:var(--gold)}
+#panel .btn{display:block;width:100%;padding:14px;border-radius:12px;background:rgba(255,255,255,.12);margin:10px 0;font-size:17px}
+#panel .note{font-size:14px;opacity:.7;margin-top:14px}
+.live{font-size:16px;opacity:.9}
+
+/* reactions + remote */
+#react{position:fixed;inset:0;pointer-events:none;z-index:16}
+.reaction{position:absolute;display:flex;flex-direction:column;align-items:center;gap:10px;animation:rpop .5s cubic-bezier(.2,1.6,.4,1) both}
+.reaction.size-s{width:22vw}.reaction.size-m{width:32vw}.reaction.size-l{width:46vw}
+.reaction img,.reaction video{width:100%;max-height:58vh;object-fit:contain;border-radius:22px;border:5px solid #fff;box-shadow:0 12px 40px rgba(0,0,0,.5);background:#000}
+.reaction.out{animation:rout .3s ease-in both}
+.remoji{font-size:clamp(80px,12vw,200px);line-height:1;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+.rtext{font-size:clamp(26px,3.2vw,54px);font-weight:900;background:#fff;color:#161a26;padding:8px 26px;border-radius:999px;text-align:center}
+@keyframes rpop{0%{transform:scale(.1) rotate(-14deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes rout{to{transform:scale(.2) rotate(10deg);opacity:0}}
+#remotePill{top:116px}
+.dbox{max-height:92vh;overflow:auto}
+.drow{display:flex;gap:8px;margin:8px 0;align-items:center}
+.drow input[type=text]{flex:1;min-width:0;width:auto;padding:10px;font-size:16px}
+.drow select{padding:10px;border-radius:10px;background:#1d2238;color:#fff;border:2px solid #39406a;font-size:16px;max-width:42%}
+.dsnd{display:flex;gap:4px;align-items:center;white-space:nowrap;font-size:18px}
+.dsnd input{width:22px;height:22px;flex:none}
+.crow{display:flex;gap:6px;align-items:center;margin:8px 0;font-size:15px}
+.crow .cn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel .crow select{width:auto;margin:0;padding:6px;font-size:14px}
+#panel .crow button{padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.12);font-size:16px}
+#panel input[type=text]{width:100%;padding:10px;border-radius:10px;background:#1d2238;color:#fff;border:1px solid #39406a;font-size:16px;margin-top:6px;user-select:text;-webkit-user-select:text}
+
+/* start screen */
+#start{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(5,7,14,.72);text-align:center;padding:30px}
+#start.gone{display:none}
+#start .card{max-width:680px}
+#start h1{font-size:clamp(44px,6vw,84px);margin-bottom:12px}
+#start p{font-size:clamp(18px,1.8vw,26px);opacity:.88;margin-bottom:12px;line-height:1.45}
+#go{margin-top:20px;font-size:30px;font-weight:800;padding:20px 60px;border-radius:20px;background:linear-gradient(135deg,#ffb020,#ff5d73);box-shadow:0 10px 40px rgba(255,93,115,.4)}
+#startmsg{margin-top:16px;font-size:18px;color:#ffb3bd;min-height:24px;white-space:pre-line;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="world">
+  <div id="bg"></div>
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="fx"></canvas>
+  <canvas id="ov"></canvas>
+</div>
+<div id="vig"></div>
+<div id="edit"></div>
+<div id="react"></div>
+
+<div id="status" class="pill"></div>
+<div id="phoneBadge" class="pill"></div>
+<div id="remotePill" class="pill"></div>
+
+<div id="meter" class="off">
+  <div>📢</div>
+  <div id="mtrack"><div id="mfill"></div><i class="mk" id="mkW"></i><i class="mk" id="mkL"></i></div>
+  <div>🔇</div>
+  <div id="streak"></div>
+</div>
+
+<div id="char"><div style="position:relative"><div class="emo m0" id="emo"></div><div class="cname" id="cname"></div></div><div class="say hide" id="say"></div></div>
+
+<div id="banner"></div>
+<div id="sub" class="ui"></div>
+<div id="tb" class="ui"></div>
+<div id="seathint"></div>
+<div id="seatbar"></div>
+<div id="panel" class="hidden"></div>
+<div id="dlg"></div>
+
+<input type="file" id="clipfile" multiple accept="image/*,video/*,audio/*" hidden>
+<div id="start">
+  <div class="card">
+    <h1>🎓 ClassCam</h1>
+    <p>Pick a random student, watch the noise level, change the scene, and get a heads-up about possible phones.</p>
+    <p>Everything runs in this browser. Nothing is recorded or uploaded. Camera and mic stay on this device, and seat names are saved only in this browser.</p>
+    <button id="go">▶ Start</button>
+    <div id="startmsg"></div>
+  </div>
+</div>
+
+<script type="module">
+/* ---------- helpers & settings ---------- */
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const rand=(a,b)=>a+Math.random()*(b-a);
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const DEFAULTS={camMode:1,theme:'forest',char:0,noiseOn:true,phonesOn:false,
+  rangeDb:35,floorDb:-55,warn:.5,loud:.75,loudSecs:2,
+  personMin:.45,phoneMin:.3,detail:false,debug:false,phoneBoxes:false,showSeats:false,model:'lite0',camId:'',micId:'',
+  reactAuto:true,reactCooldown:20,reactSecs:5,reactSize:'m',relay:'https://ntfy.sh'};
+const S={...DEFAULTS};
+try{Object.assign(S,JSON.parse(localStorage.getItem('classcam')||'{}'))}catch(e){}
+const save=()=>{try{localStorage.setItem('classcam',JSON.stringify(S))}catch(e){}};
+
+const MODELS={
+  lite0:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
+  lite2:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite'};
+const MP='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+
+const cam=$('cam'),fx=$('fx'),ov=$('ov'),fctx=fx.getContext('2d'),octx=ov.getContext('2d');
+let W=innerWidth,H=innerHeight;
+let camOK=false,micOK=false,camStream=null,micStream=null,audioCtx=null,analyser=null,tbuf=null,camErr='',micErr='';
+let persons=[],phones=[],phoneHist=[];
+let level=0,curDb=-100,loudT=0,loudCool=0,quietT=0,lastMinute=0,mood=0,lastSay=0;
+let FX=[],flash=0,bolt=null,P=[],weed={x:-100,rot:0};
+let spot=null,cands=[],picking=false,pickedHist=[],pickedKeys=new Set();
+
+/* ---------- seats + ignore zones (saved in this browser only) ---------- */
+let seats=[],zones=[],editing=false,tool='seat',queue=[],drag=null,nextId=1;
+try{const o=JSON.parse(localStorage.getItem('classcam_seats')||'{}');seats=o.seats||[];zones=o.zones||[];}catch(e){}
+nextId=seats.reduce((m,s)=>Math.max(m,s.id||0),0)+1;
+const saveSeats=()=>{try{localStorage.setItem('classcam_seats',JSON.stringify({seats,zones}))}catch(e){}};
+function addSeat(x,y,name){seats.push({id:nextId++,name,x,y});saveSeats();}
+
+/* ---------- status / banner ---------- */
+let statusT;
+function status(msg,sticky){const el=$('status');el.textContent=msg;el.classList.add('show');clearTimeout(statusT);if(!sticky)statusT=setTimeout(()=>el.classList.remove('show'),3500);}
+let bannerT;
+function banner(html,ms=0){const b=$('banner');b.innerHTML=html;b.classList.add('show');clearTimeout(bannerT);if(ms)bannerT=setTimeout(()=>b.classList.remove('show'),ms);}
+function hideBanner(){$('banner').classList.remove('show');}
+
+/* ---------- camera + mic ---------- */
+async function startCamera(){
+  if(camStream)camStream.getTracks().forEach(t=>t.stop());
+  const base={width:{ideal:1920},height:{ideal:1080}};
+  try{
+    try{camStream=await navigator.mediaDevices.getUserMedia({video:S.camId?{...base,deviceId:{exact:S.camId}}:base,audio:false});}
+    catch(e){if(!S.camId)throw e;S.camId='';save();camStream=await navigator.mediaDevices.getUserMedia({video:base,audio:false});}
+    cam.srcObject=camStream;await cam.play();camOK=true;camErr='';status('Camera ready');
+  }catch(e){camOK=false;camErr=e.name||String(e);status('Camera unavailable ('+camErr+')',true);}
+}
+async function startMic(){
+  if(micStream)micStream.getTracks().forEach(t=>t.stop());
+  const raw={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+  try{
+    try{micStream=await navigator.mediaDevices.getUserMedia({audio:S.micId?{...raw,deviceId:{exact:S.micId}}:raw});}
+    catch(e){if(!S.micId)throw e;S.micId='';save();micStream=await navigator.mediaDevices.getUserMedia({audio:raw});}
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    await audioCtx.resume();
+    analyser=audioCtx.createAnalyser();analyser.fftSize=1024;
+    audioCtx.createMediaStreamSource(micStream).connect(analyser);
+    tbuf=new Float32Array(analyser.fftSize);micOK=true;micErr='';
+  }catch(e){micOK=false;micErr=e.name||String(e);status('Microphone unavailable ('+micErr+')',true);}
+}
+async function fillDevices(){
+  try{
+    const ds=await navigator.mediaDevices.enumerateDevices();
+    const fill=(id,kind,cur)=>{const el=$(id);if(!el)return;
+      el.innerHTML='<option value="">Default</option>'+ds.filter(d=>d.kind===kind).map((d,i)=>`<option value="${esc(d.deviceId)}" ${d.deviceId===cur?'selected':''}>${esc(d.label||kind+' '+(i+1))}</option>`).join('');};
+    fill('p_cam','videoinput',S.camId);fill('p_mic','audioinput',S.micId);
+  }catch(e){}
+}
+
+/* ---------- vision backend: background worker, with main-thread fallback ---------- */
+let backend='none',detStatus='loading',worker=null,detMain=null,reqId=0;
+const pending=new Map();
+// Classic worker (no template-literal syntax inside, so it can live in a JS template string).
+const WORKER_SRC=[
+"var exports={};var det=null;",
+"self.onmessage=async function(e){var m=e.data;",
+" if(m.type==='init'){try{",
+"  importScripts(m.mp+'/vision_bundle.cjs');",
+"  var FR=exports.FilesetResolver,OD=exports.ObjectDetector;",
+"  var fs=await FR.forVisionTasks(m.mp+'/wasm');",
+"  var o=function(d){return{baseOptions:{modelAssetPath:m.model,delegate:d},scoreThreshold:0.2,maxResults:80,runningMode:'IMAGE',categoryAllowlist:['person','cell phone']};};",
+"  try{det=await OD.createFromOptions(fs,o('GPU'));}catch(err){det=await OD.createFromOptions(fs,o('CPU'));}",
+"  postMessage({type:'ready'});",
+" }catch(err){postMessage({type:'error',msg:String(err&&err.message||err)});}}",
+" else if(m.type==='detect'){try{",
+"  var r=det.detect(m.bitmap);if(m.bitmap.close)m.bitmap.close();",
+"  postMessage({type:'res',id:m.id,dets:r.detections.map(function(d){var c=d.categories[0],b=d.boundingBox;return{c:c.categoryName,s:c.score,x:b.originX,y:b.originY,w:b.width,h:b.height};})});",
+" }catch(err){postMessage({type:'res',id:m.id,dets:[],err:String(err)});}}",
+"};"].join('\n');
+
+function startWorker(){
+  return new Promise((resolve,reject)=>{
+    let w;
+    try{w=new Worker(URL.createObjectURL(new Blob([WORKER_SRC],{type:'text/javascript'})));}catch(e){reject(e);return;}
+    const timer=setTimeout(()=>{w.terminate();reject(new Error('worker init timeout'));},45000);
+    w.onmessage=e=>{const m=e.data;
+      if(m.type==='ready'){clearTimeout(timer);w.onmessage=onWorkerMsg;w.onerror=onWorkerDied;resolve(w);}
+      else if(m.type==='error'){clearTimeout(timer);w.terminate();reject(new Error(m.msg));}};
+    w.onerror=e=>{clearTimeout(timer);w.terminate();reject(new Error(e.message||'worker error'));};
+    w.postMessage({type:'init',mp:MP,model:MODELS[S.model]||MODELS.lite0});
+  });
+}
+function onWorkerMsg(e){const m=e.data;if(m.type!=='res')return;const f=pending.get(m.id);if(f){pending.delete(m.id);f(m.dets||[]);}}
+function onWorkerDied(){console.error('Detection worker stopped; switching to basic mode');for(const f of pending.values())f([]);pending.clear();worker=null;backend='none';initDetector(true);}
+
+async function initDetector(forceMain=false){
+  detStatus='loading';backend='none';
+  if(worker){worker.onerror=null;worker.terminate();worker=null;}
+  if(detMain){try{detMain.close();}catch(e){}detMain=null;}
+  status('Loading vision model…',true);
+  if(!forceMain&&typeof Worker!=='undefined'&&typeof createImageBitmap==='function'){
+    try{worker=await startWorker();backend='worker';detStatus='ready';status('Vision ready ✓');return;}
+    catch(e){console.warn('Background worker unavailable, using main thread:',e);}
+  }
+  try{
+    const {FilesetResolver,ObjectDetector}=await import(MP+'/vision_bundle.mjs');
+    const fileset=await FilesetResolver.forVisionTasks(MP+'/wasm');
+    const opts=d=>({baseOptions:{modelAssetPath:MODELS[S.model]||MODELS.lite0,delegate:d},scoreThreshold:.2,maxResults:80,runningMode:'IMAGE',categoryAllowlist:['person','cell phone']});
+    try{detMain=await ObjectDetector.createFromOptions(fileset,opts('GPU'));}
+    catch(e){detMain=await ObjectDetector.createFromOptions(fileset,opts('CPU'));}
+    backend='main';detStatus='ready';status('Vision ready ✓ (basic mode)');
+  }catch(e){
+    console.error(e);detStatus='failed';
+    status('Vision model could not load (needs internet the first time). Noise meter and scenes still work.',true);
+  }
+}
+
+const tcv=document.createElement('canvas'),tctx=tcv.getContext('2d');
+// Detect inside a crop of the camera frame; returns boxes in full-video pixel coordinates.
+async function detectRegion(sx,sy,sw,sh,outW){
+  sx=Math.round(sx);sy=Math.round(sy);sw=Math.round(sw);sh=Math.round(sh);
+  const k=Math.min(1,outW/sw),ow=Math.max(32,Math.round(sw*k)),oh=Math.max(32,Math.round(sh*k)),sc=sw/ow;
+  let dets=[];
+  if(backend==='worker'){
+    const bmp=await createImageBitmap(cam,sx,sy,sw,sh,{resizeWidth:ow,resizeHeight:oh,resizeQuality:'low'});
+    const id=++reqId;
+    dets=await Promise.race([
+      new Promise(res=>{pending.set(id,res);worker.postMessage({type:'detect',id,bitmap:bmp},[bmp]);}),
+      sleep(8000).then(()=>{pending.delete(id);return [];})]);
+  }else if(backend==='main'){
+    tcv.width=ow;tcv.height=oh;tctx.drawImage(cam,sx,sy,sw,sh,0,0,ow,oh);
+    dets=detMain.detect(tcv).detections.map(d=>{const c=d.categories[0],b=d.boundingBox;return{c:c.categoryName,s:c.score,x:b.originX,y:b.originY,w:b.width,h:b.height};});
+  }else return [];
+  return dets.map(d=>({c:d.c,s:d.s,x:d.x*sc+sx,y:d.y*sc+sy,w:d.w*sc,h:d.h*sc}));
+}
+function split(dets){
+  const pp=[],ph=[];
+  for(const d of dets){const o={x:d.x,y:d.y,w:d.w,h:d.h,s:d.s};
+    if(d.c==='person'&&d.s>=S.personMin)pp.push(o);
+    else if(d.c==='cell phone'&&d.s>=S.phoneMin)ph.push(o);}
+  return{pp,ph};
+}
+function iou(a,b){const x1=Math.max(a.x,b.x),y1=Math.max(a.y,b.y),x2=Math.min(a.x+a.w,b.x+b.w),y2=Math.min(a.y+a.h,b.y+b.h);const i=Math.max(0,x2-x1)*Math.max(0,y2-y1);return i/(a.w*a.h+b.w*b.h-i+1e-6);}
+function nms(list,thr){const out=[];for(const b of [...list].sort((a,b)=>b.s-a.s))if(!out.some(o=>iou(o,b)>thr))out.push(b);return out;}
+function notIgnored(b){
+  if(!zones.length)return true;
+  const vw=cam.videoWidth||1,vh=cam.videoHeight||1,cx=(b.x+b.w/2)/vw,cy=(b.y+b.h/2)/vh;
+  return !zones.some(z=>cx>=z.x&&cx<=z.x+z.w&&cy>=z.y&&cy<=z.y+z.h);
+}
+
+let detBusy=false,tileCache=[],tileAt=0;
+async function sample(withTiles){
+  const vw=cam.videoWidth,vh=cam.videoHeight;if(!vw)return;
+  const full=split(await detectRegion(0,0,vw,vh,960));
+  persons=nms(full.pp,.5).filter(notIgnored);
+  if(withTiles){
+    const cols=3,rows=2,o=.2,tw=Math.min(vw,vw/cols*(1+o)),th=Math.min(vh,vh/rows*(1+o)),out=[];
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+      const sx=clamp(c*vw/cols-vw/cols*o/2,0,vw-tw),sy=clamp(r*vh/rows-vh/rows*o/2,0,vh-th);
+      out.push(...split(await detectRegion(sx,sy,tw,th,tw)).ph);
+    }
+    tileCache=out;tileAt=performance.now();
+  }
+  const extra=performance.now()-tileAt<7000?tileCache:[];
+  phones=nms([...full.ph,...extra],.3).filter(notIgnored);
+}
+let lastDet=0,lastTile=0;
+function maybeDetect(now){
+  if(detBusy||detStatus!=='ready'||!camOK||cam.readyState<2||picking||editing)return;
+  if(!S.phonesOn&&!S.debug)return;
+  if(now-lastDet<750)return;lastDet=now;
+  const tiles=S.detail&&S.phonesOn&&now-lastTile>3000;if(tiles)lastTile=now;
+  detBusy=true;
+  sample(tiles).then(()=>{phoneHist.push(phones.length);if(phoneHist.length>5)phoneHist.shift();updatePhoneBadge();})
+    .catch(e=>console.error(e)).finally(()=>{detBusy=false;});
+}
+function updatePhoneBadge(){
+  const el=$('phoneBadge');
+  if(!S.phonesOn){el.classList.remove('show','alert');return;}
+  const m=[...phoneHist].sort((a,b)=>a-b)[Math.floor(phoneHist.length/2)]||0;
+  el.textContent=m?`📱 ${m} possible phone${m>1?'s':''} spotted`:'📱 No phones spotted';
+  el.className='pill show'+(m?' alert':'');
+}
+// One-off scan of the room for people (used by the picker and seat auto-add)
+async function scanPeople(passes){
+  while(detBusy)await sleep(30);
+  detBusy=true;const all=[];
+  try{
+    for(let i=0;i<passes;i++){
+      all.push(...split(await detectRegion(0,0,cam.videoWidth,cam.videoHeight,960)).pp);
+      if(i<passes-1)await sleep(120);
+    }
+  }catch(e){console.error(e);}
+  finally{detBusy=false;}
+  const minArea=cam.videoWidth*cam.videoHeight*.0015;
+  return nms(all,.45).filter(b=>b.w*b.h>minArea&&notIgnored(b));
+}
+
+/* ---------- screen <-> video coordinates ---------- */
+function vmap(){const vw=cam.videoWidth||16,vh=cam.videoHeight||9,s=Math.max(W/vw,H/vh);return{s,ox:(W-vw*s)/2,oy:(H-vh*s)/2};}
+function toScreen(b){const m=vmap();return{x:b.x*m.s+m.ox,y:b.y*m.s+m.oy,w:b.w*m.s,h:b.h*m.s};}
+function fromScreen(px,py){const m=vmap(),vw=cam.videoWidth||1,vh=cam.videoHeight||1;return{x:clamp((px-m.ox)/m.s/vw,0,1),y:clamp((py-m.oy)/m.s/vh,0,1)};}
+function seatScreen(s){const m=vmap(),vw=cam.videoWidth||1,vh=cam.videoHeight||1;return{x:s.x*vw*m.s+m.ox,y:s.y*vh*m.s+m.oy};}
+function zoneScreen(z){const m=vmap(),vw=cam.videoWidth||1,vh=cam.videoHeight||1;return{x:z.x*vw*m.s+m.ox,y:z.y*vh*m.s+m.oy,w:z.w*vw*m.s,h:z.h*vh*m.s};}
+function rr(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+
+/* ---------- random student picker ---------- */
+function labelSeats(list){
+  const hs=list.map(b=>b.h).sort((a,b)=>a-b),mh=hs[Math.floor(hs.length/2)]||1;
+  const sorted=[...list].sort((a,b)=>(b.y+b.h)-(a.y+a.h));
+  const rows=[];let cur=[],ref=null;
+  for(const b of sorted){const by=b.y+b.h;
+    if(ref===null||ref-by<mh*.6){cur.push(b);if(ref===null)ref=by;}else{rows.push(cur);cur=[b];ref=by;}}
+  if(cur.length)rows.push(cur);
+  rows.forEach((r,ri)=>r.sort((a,b)=>a.x-b.x).forEach((b,si)=>{b.label=`Row ${ri+1} · Seat ${si+1}`;}));
+}
+// Match each saved seat marker to the person standing/sitting at it
+function matchSeats(people){
+  const vw=cam.videoWidth,vh=cam.videoHeight,pairs=[];
+  for(const seat of seats){const px=seat.x*vw,py=seat.y*vh;
+    for(const b of people){
+      if(px>=b.x-b.w*.15&&px<=b.x+b.w*1.15&&py>=b.y-b.h*.1&&py<=b.y+b.h*1.3)
+        pairs.push({seat,box:b,d:Math.hypot(px-(b.x+b.w/2),py-(b.y+b.h/2))});}}
+  pairs.sort((a,b)=>a.d-b.d);
+  const us=new Set(),ub=new Set(),out=[];
+  for(const p of pairs){if(us.has(p.seat)||ub.has(p.box))continue;us.add(p.seat);ub.add(p.box);out.push(p);}
+  return out;
+}
+async function pickStudent(){
+  if(picking||editing)return;
+  if(detStatus!=='ready'){status(detStatus==='loading'?'Vision model is still loading…':'Vision model unavailable',detStatus==='failed');return;}
+  if(!camOK||!cam.videoWidth){status('Camera not available',true);return;}
+  picking=true;spot=null;
+  banner('🔎 Finding students…');
+  const people=await scanPeople(2);persons=people;
+  const vw=cam.videoWidth,vh=cam.videoHeight;
+  let list,info='';
+  if(seats.length){
+    const m=matchSeats(people);
+    list=m.map(p=>({box:p.box,label:p.seat.name,key:'s'+p.seat.id}));
+    info=`${list.length} of ${seats.length} seats have a student`;
+    if(!list.length){picking=false;
+      banner('😕 No students found at your saved seats<br><small>Has the camera moved? Open 🪑 Seats to check the markers, or lower the confidence in ⚙️ Settings</small><div class="bb"><button data-act="close">OK</button></div>');return;}
+  }else{
+    if(!people.length){picking=false;
+      banner('😕 No students detected<br><small>Check the camera angle and lighting, or lower the confidence in ⚙️ Settings</small><div class="bb"><button data-act="close">OK</button></div>');return;}
+    labelSeats(people);
+    list=people.map(b=>({box:b,label:b.label,key:null}));
+  }
+  const cen=b=>({x:(b.x+b.w/2)/vw,y:(b.y+b.h/2)/vh});
+  const done=it=>it.key?pickedKeys.has(it.key):pickedHist.some(h=>{const c=cen(it.box);return Math.hypot(h.x-c.x,h.y-c.y)<.06;});
+  let pool=list.filter(it=>!done(it)),reset=false;
+  if(!pool.length){pickedKeys.clear();pickedHist=[];pool=list;reset=true;}
+  hideBanner();cands=list.map(it=>it.box);
+  const target=pick(pool),steps=24;let prev=null;
+  for(let i=0;i<steps;i++){
+    let it=target;
+    if(i<steps-1){do{it=pick(list);}while(list.length>1&&it===prev);}
+    prev=it;spot={box:it.box,label:it.label,mode:'shuffle'};
+    await sleep(70+Math.pow(i/steps,2)*420);
+  }
+  spot={box:target.box,label:target.label,mode:'final'};cands=[];
+  if(target.key)pickedKeys.add(target.key);else pickedHist.push(cen(target.box));
+  const r=toScreen(target.box);confetti(r.x+r.w/2,r.y+r.h*.3,170);
+  const small=[info,reset?'Everyone has had a turn, starting a new round':''].filter(Boolean).join(' · ');
+  banner(`🎯 <b>${esc(target.label)}</b><br>You're up!${small?`<br><small>${esc(small)}</small>`:''}<div class="bb"><button data-act="again">🎲 Pick another</button><button data-act="close">Done</button></div>`);
+  picking=false;
+  remoteSendState(true);
+  setTimeout(()=>autoReact('pick'),700);
+}
+
+/* ---------- noise meter ---------- */
+function readNoise(dt){
+  if(performance.now()<heldUntil){level+=(0-level)*(1-Math.exp(-dt*2.5));return;}   // a reaction with sound is playing: don't let it feed the mic meter
+  if(analyser&&S.noiseOn){
+    analyser.getFloatTimeDomainData(tbuf);
+    let s=0;for(let i=0;i<tbuf.length;i++)s+=tbuf[i]*tbuf[i];
+    curDb=20*Math.log10(Math.sqrt(s/tbuf.length)+1e-7);
+  }
+  const target=S.noiseOn&&micOK?clamp((curDb-S.floorDb)/S.rangeDb,0,1):0;
+  const k=target>level?1-Math.exp(-dt*12):1-Math.exp(-dt*2.5);
+  level+=(target-level)*k;
+}
+async function calibrate(){
+  if(!analyser){status('No microphone available',true);return;}
+  banner('🤫 Quiet please… measuring for 3 seconds');
+  let sum=0,n=0;const t0=performance.now();
+  while(performance.now()-t0<3000){await sleep(50);sum+=curDb;n++;}
+  S.floorDb=sum/n+3;save();banner('✅ Calibrated to this room',1800);
+}
+
+/* ---------- characters ---------- */
+const CHARS=[
+  {n:'Sheriff Sam',m:['🤠','😮','😱'],l:[['Peaceful as a prairie sunrise.','Mighty fine work, partner.'],["Things are gettin' rowdy, partner…",'Easy now, folks.'],["Whoa there! Quiet down, y'all!",'This ain’t no stampede!']]},
+  {n:'Sir Drake',m:['🐉','🐲','🔥'],l:[['Hmm. Peaceful. I approve.','Even dragons nap quietly.'],['My scales are tingling…','Careful, my temper is rising.'],['I AM BREATHING FIRE!','ROAR! Too loud!']]},
+  {n:'Robo-Bot',m:['🤖','👾','🚨'],l:[['All systems calm. Beep boop.','Volume: nominal.'],['Warning: volume rising.','Noise levels: elevated.'],['ALERT! ALERT! TOO LOUD!','Overload imminent!']]},
+  {n:'Whiskers',m:['😺','😼','🙀'],l:[['Purrfect quiet.','This is nice. *purrs*'],['My ears are twitching…','Getting a bit loud, hmm?'],['EEEEK! Too loud!!','My whiskers can’t take it!']]}];
+function say(text){const el=$('say');el.textContent=text;el.classList.remove('hide');lastSay=performance.now();clearTimeout(say.t);say.t=setTimeout(()=>el.classList.add('hide'),6000);}
+function setChar(){const c=CHARS[S.char]||CHARS[0];$('emo').textContent=c.m[mood];$('emo').className='emo m'+mood;$('cname').textContent=c.n;}
+function charLine(){const c=CHARS[S.char]||CHARS[0];say(pick(c.l[mood]));}
+
+/* ---------- scenes (ambience) ---------- */
+const THEMES={
+  forest:{name:'Firefly Forest',emoji:'🌲',bg:'linear-gradient(#071a12,#0b2a1c 60%,#041009)',
+    init(){P=Array.from({length:60},()=>({x:rand(0,W),y:rand(0,H),a:rand(0,6.28),ph:rand(0,6.28),r:rand(2,5)}));},
+    draw(c,dt,L,t){const sp=18+L*220;
+      for(const p of P){p.a+=rand(-1,1)*dt*3;p.x+=Math.cos(p.a)*sp*dt;p.y+=Math.sin(p.a)*sp*dt*.6-6*dt;
+        if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+        const tw=.5+.5*Math.sin(t*3+p.ph),hue=50-L*50,R=p.r*6;
+        const g=c.createRadialGradient(p.x,p.y,0,p.x,p.y,R);
+        g.addColorStop(0,`hsla(${hue},100%,70%,${.9*tw})`);g.addColorStop(1,`hsla(${hue},100%,60%,0)`);
+        c.fillStyle=g;c.fillRect(p.x-R,p.y-R,R*2,R*2);}}},
+  storm:{name:'Thunderstorm',emoji:'⛈️',bg:'linear-gradient(#10131f,#1b2235 70%,#0a0d16)',
+    init(){P=Array.from({length:500},()=>({x:rand(-100,W),y:rand(0,H),l:rand(12,28),v:rand(700,1100)}));},
+    draw(c,dt,L){const n=Math.floor(120+L*380),wind=80+L*260;
+      c.strokeStyle='rgba(170,200,255,.55)';c.lineWidth=1.5;c.beginPath();
+      for(let i=0;i<n;i++){const p=P[i];p.y+=p.v*dt*(.8+L*.6);p.x+=wind*dt;
+        if(p.y>H){p.y=-20;p.x=rand(-200,W);}if(p.x>W+50)p.x=-50;
+        c.moveTo(p.x,p.y);c.lineTo(p.x-wind*.03,p.y-p.l);}
+      c.stroke();
+      if(L>.65&&Math.random()<dt*(L-.5)*3)lightning();}},
+  space:{name:'Deep Space',emoji:'🚀',bg:'radial-gradient(#10142e,#03040c)',
+    init(){P=Array.from({length:260},()=>({x:rand(-1,1),y:rand(-1,1),z:rand(.05,1)}));},
+    draw(c,dt,L){const sp=.08+L*1.1,cx=W/2,cy=H/2;c.lineCap='round';
+      for(const p of P){const pz=p.z;p.z-=sp*dt;
+        if(p.z<=.02){p.x=rand(-1,1);p.y=rand(-1,1);p.z=1;continue;}
+        const sx=cx+p.x/p.z*W*.25,sy=cy+p.y/p.z*H*.25,ox=cx+p.x/pz*W*.25,oy=cy+p.y/pz*H*.25;
+        c.strokeStyle=`rgba(200,220,255,${clamp(1-p.z,.15,1)})`;c.lineWidth=1+(1-p.z)*2.5;
+        c.beginPath();c.moveTo(ox,oy);c.lineTo(sx,sy);c.stroke();}}},
+  west:{name:'Wild West',emoji:'🌵',bg:'linear-gradient(#ffb36b,#f0784a 45%,#7a3b2a 46%,#3d1f18)',
+    init(){P=Array.from({length:140},()=>({x:rand(0,W),y:rand(H*.45,H),v:rand(.6,1.4),r:rand(1,3)}));weed={x:-100,rot:0};},
+    draw(c,dt,L,t){const wind=70+L*1100;
+      c.fillStyle='rgba(255,220,170,.55)';
+      for(const p of P){p.x+=wind*p.v*dt;p.y+=Math.sin(t+p.x*.01)*8*dt;if(p.x>W+10){p.x=-10;p.y=rand(H*.45,H);}c.fillRect(p.x,p.y,p.r*(1+L*4),p.r);}
+      weed.x+=wind*.6*dt;weed.rot+=wind*.6*dt/50;if(weed.x>W+100)weed.x=-100;
+      const by=H*.86-Math.abs(Math.sin(t*3))*40*(.3+L);
+      c.save();c.translate(weed.x,by);c.rotate(weed.rot);c.strokeStyle='#7b5a2e';c.lineWidth=3;
+      for(let i=0;i<4;i++){c.rotate(Math.PI/4);c.beginPath();c.ellipse(0,0,38,22,0,0,6.28);c.stroke();}
+      c.restore();
+      c.font='72px serif';c.fillText('🌵',W*.08,H*.93);c.fillText('🌵',W*.86,H*.95);}},
+  ocean:{name:'Ocean Deep',emoji:'🌊',bg:'linear-gradient(#0a4a73,#06304f 60%,#03182b)',
+    init(){P=Array.from({length:60},()=>({x:rand(0,W),y:rand(0,H),r:rand(3,14),v:rand(20,60),w:rand(0,6.28)}));},
+    draw(c,dt,L,t){c.strokeStyle='rgba(200,240,255,.5)';c.lineWidth=2;
+      for(const p of P){p.y-=p.v*dt*(1+L*5);p.x+=Math.sin(t*2+p.w)*20*dt*(1+L*3);if(p.y<-20){p.y=H+20;p.x=rand(0,W);}
+        c.beginPath();c.arc(p.x,p.y,p.r*(1+L*.5),0,6.28);c.stroke();}
+      c.fillStyle='rgba(10,90,140,.35)';
+      for(let k=0;k<3;k++){c.beginPath();c.moveTo(0,H);const amp=10+L*50+k*6;
+        for(let x=0;x<=W;x+=32)c.lineTo(x,H*(.9-k*.03)+Math.sin(x*.01+t*(1+k*.4)+k)*amp);
+        c.lineTo(W,H);c.fill();}}},
+  party:{name:'Party Lights',emoji:'🪩',bg:'linear-gradient(#150a2a,#2a0f3f)',
+    init(){P=[];},
+    draw(c,dt,L,t){c.globalCompositeOperation='lighter';
+      for(let i=0;i<6;i++){const ang=Math.sin(t*(.6+i*.13)+i)*.9,hue=(t*60+i*60)%360,x=W*(i+.5)/6;
+        c.fillStyle=`hsla(${hue},100%,60%,${.1+L*.22})`;c.beginPath();c.moveTo(x-8,0);c.lineTo(x+8,0);
+        c.lineTo(x+Math.tan(ang)*H+160,H);c.lineTo(x+Math.tan(ang)*H-160,H);c.fill();}
+      c.globalCompositeOperation='source-over';}},
+  none:{name:'No scene',emoji:'⬜',bg:'#07090f',init(){P=[];},draw(){}}
+};
+function initTheme(){const th=THEMES[S.theme]||THEMES.forest;th.init();$('bg').style.background=th.bg;}
+function setTheme(k){S.theme=k;save();initTheme();render();}
+
+/* ---------- event effects ---------- */
+function confetti(x,y,n=150){const cols=['#ffd24a','#ff5d73','#4dd2ff','#7dff8a','#c77dff','#ffffff'];
+  for(let i=0;i<n;i++){const a=rand(-Math.PI*.95,-Math.PI*.05),s=rand(250,900);
+    FX.push({t:'c',x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,g:900,life:rand(1.6,3),max:3,sz:rand(6,12),col:pick(cols),rot:rand(0,6),vr:rand(-8,8)});}}
+function fireworks(){for(let i=0;i<6;i++)setTimeout(()=>{const x=rand(W*.15,W*.85),y=rand(H*.12,H*.5),hue=rand(0,360);
+  for(let k=0;k<70;k++){const a=rand(0,6.28),s=rand(80,420);
+    FX.push({t:'s',x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,g:220,life:rand(.9,1.6),max:1.6,sz:rand(2,4),col:`hsl(${hue+rand(-20,20)},100%,65%)`});}},i*380);}
+function snow(){for(let i=0;i<180;i++)FX.push({t:'n',x:rand(0,W),y:rand(-H*.6,0),vx:rand(-30,30),vy:rand(60,200),g:0,life:rand(5,8),max:8,sz:rand(2,6),col:'#fff'});}
+function lightning(){flash=1;const pts=[];let x=rand(W*.2,W*.8),y=0;while(y<H*.75){pts.push([x,y]);x+=rand(-60,60);y+=rand(40,90);}bolt=pts;}
+function drawFx(dt,t){
+  fctx.clearRect(0,0,W,H);
+  const L=S.noiseOn&&micOK?level:.12;
+  (THEMES[S.theme]||THEMES.forest).draw(fctx,dt,L,t);
+  for(let i=FX.length-1;i>=0;i--){const p=FX[i];
+    p.life-=dt;p.vy+=p.g*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;
+    if(p.t==='c'){p.vx*=.992;p.rot+=p.vr*dt;}
+    if(p.life<=0||p.y>H+60){FX.splice(i,1);continue;}
+    fctx.globalAlpha=clamp(p.life/(p.max*.35),0,1);fctx.fillStyle=p.col;
+    if(p.t==='c'){fctx.save();fctx.translate(p.x,p.y);fctx.rotate(p.rot);fctx.fillRect(-p.sz/2,-p.sz/3,p.sz,p.sz*.6);fctx.restore();}
+    else{fctx.beginPath();fctx.arc(p.x,p.y,p.sz,0,6.28);fctx.fill();}}
+  fctx.globalAlpha=1;
+  if(flash>0){fctx.fillStyle=`rgba(255,255,255,${flash*.7})`;fctx.fillRect(0,0,W,H);
+    if(bolt&&flash>.4){fctx.strokeStyle=`rgba(255,255,255,${flash})`;fctx.lineWidth=4;fctx.beginPath();bolt.forEach(([x,y],i)=>i?fctx.lineTo(x,y):fctx.moveTo(x,y));fctx.stroke();}
+    flash-=dt*2.5;}
+}
+
+/* ---------- overlay (spotlight, seats, zones, debug boxes) ---------- */
+function drawSeatLayer(){
+  if(editing||S.debug){
+    for(const z of zones){const r=zoneScreen(z);
+      octx.fillStyle='rgba(255,60,80,.18)';octx.fillRect(r.x,r.y,r.w,r.h);
+      octx.strokeStyle='rgba(255,90,110,.9)';octx.lineWidth=3;octx.setLineDash([10,8]);octx.strokeRect(r.x,r.y,r.w,r.h);octx.setLineDash([]);
+      octx.fillStyle='#ffb3bd';octx.font='600 18px system-ui,sans-serif';octx.fillText('ignored',r.x+10,r.y+26);}
+  }
+  if(editing&&tool==='zone'&&drag&&drag.moved){
+    octx.strokeStyle='#ff6b81';octx.lineWidth=3;octx.setLineDash([10,8]);
+    octx.strokeRect(Math.min(drag.x0,drag.x1),Math.min(drag.y0,drag.y1),Math.abs(drag.x1-drag.x0),Math.abs(drag.y1-drag.y0));octx.setLineDash([]);}
+  if(editing||S.showSeats){
+    octx.font='600 20px system-ui,sans-serif';octx.textAlign='center';
+    for(const s of seats){const p=seatScreen(s);
+      octx.fillStyle=editing?'#ffd24a':'rgba(255,255,255,.9)';octx.beginPath();octx.arc(p.x,p.y,editing?13:8,0,6.28);octx.fill();
+      octx.strokeStyle='#1b1200';octx.lineWidth=3;octx.stroke();
+      const w=octx.measureText(s.name).width+22;
+      octx.fillStyle='rgba(10,12,22,.88)';octx.beginPath();rr(octx,p.x-w/2,p.y+18,w,30,15);octx.fill();
+      octx.fillStyle='#fff';octx.fillText(s.name,p.x,p.y+39);}
+    octx.textAlign='start';}
+}
+function drawOv(t){
+  octx.clearRect(0,0,W,H);
+  drawSeatLayer();
+  if(picking&&cands.length){octx.strokeStyle='rgba(255,255,255,.4)';octx.lineWidth=2;octx.setLineDash([8,8]);
+    for(const b of cands){const r=toScreen(b);octx.beginPath();rr(octx,r.x,r.y,r.w,r.h,14);octx.stroke();}octx.setLineDash([]);}
+  if(S.debug){octx.strokeStyle='#4dd2ff';octx.lineWidth=2;octx.font='16px sans-serif';octx.fillStyle='#4dd2ff';
+    for(const b of persons){const r=toScreen(b);octx.strokeRect(r.x,r.y,r.w,r.h);octx.fillText(Math.round(b.s*100)+'%',r.x+4,r.y+18);}}
+  if(S.phonesOn&&S.phoneBoxes){octx.strokeStyle='#ffb020';octx.lineWidth=3;
+    for(const b of phones){const r=toScreen(b);octx.strokeRect(r.x-6,r.y-6,r.w+12,r.h+12);}}
+  if(!spot)return;
+  const r=toScreen(spot.box),pad=r.w*.08,x=r.x-pad,y=r.y-pad,w=r.w+pad*2,h=r.h+pad*2,fin=spot.mode==='final';
+  octx.fillStyle=fin?'rgba(0,0,0,.78)':'rgba(0,0,0,.6)';
+  octx.beginPath();octx.rect(0,0,W,H);rr(octx,x,y,w,h,22);octx.fill('evenodd');
+  if(S.camMode===0){octx.fillStyle='rgba(255,210,74,.14)';octx.beginPath();rr(octx,x,y,w,h,22);octx.fill();}
+  const pulse=.5+.5*Math.sin(t*6);
+  // cheap glow: a wide translucent stroke under the crisp one (no shadowBlur, which is slow)
+  octx.strokeStyle=`rgba(255,210,74,${.18+pulse*.22})`;octx.lineWidth=18;octx.beginPath();rr(octx,x,y,w,h,22);octx.stroke();
+  octx.strokeStyle='#ffd24a';octx.lineWidth=5;octx.beginPath();rr(octx,x,y,w,h,22);octx.stroke();
+  if(fin&&spot.label){octx.font='700 30px system-ui,sans-serif';octx.textAlign='center';
+    const ty=(y+h+54>H)?y-18:y+h+40,tw=octx.measureText(spot.label).width+40;
+    octx.fillStyle='#ffd24a';octx.beginPath();rr(octx,x+w/2-tw/2,ty-32,tw,46,23);octx.fill();
+    octx.fillStyle='#1b1200';octx.fillText(spot.label,x+w/2,ty);octx.textAlign='start';}
+}
+
+/* ---------- per-frame UI ---------- */
+function updateUI(dt,now){
+  const on=S.noiseOn&&micOK;
+  $('meter').classList.toggle('off',!on);
+  const m=level<S.warn?0:level<S.loud?1:2;
+  $('mfill').style.height=(level*100)+'%';
+  $('meter').style.setProperty('--c',['var(--calm)','var(--warn)','var(--loud)'][m]);
+  $('mkW').style.bottom=(S.warn*100)+'%';$('mkL').style.bottom=(S.loud*100)+'%';
+  if(m!==mood||(on&&m===0&&now-lastSay>28000)){const prev=mood;mood=m;setChar();
+    if(on&&$('start').classList.contains('gone')){charLine();if(prev===0&&m===1)autoReact('warn');}}
+  $('vig').style.opacity=on?clamp((level-S.warn)/(1-S.warn),0,1)*.85:0;
+  const amp=on?Math.max(0,(level-S.loud)/(1-S.loud))*16:0;
+  $('world').style.transform=amp>.5?`translate(${rand(-amp,amp)}px,${rand(-amp,amp)}px) scale(1.03)`:'';
+  if(on&&level>S.loud&&now>=heldUntil)loudT+=dt;else loudT=Math.max(0,loudT-dt*2);
+  if(loudT>S.loudSecs&&now>loudCool){loudCool=now+8000;loudT=0;
+    banner('🤫 <b>Too loud!</b>',2600);charLine();if(S.theme==='storm')lightning();autoReact('loud');}
+  if(on&&level<S.warn*.6)quietT+=dt;else if(level>S.warn)quietT=0;
+  const q=Math.floor(quietT);
+  $('streak').textContent=on&&q>=10?`🕊️ quiet\n${Math.floor(q/60)}:${String(q%60).padStart(2,'0')}`:'';
+  $('streak').style.whiteSpace='pre';
+  if(on&&q>=60&&Math.floor(q/60)>lastMinute){lastMinute=Math.floor(q/60);confetti(W*.5,H*.7,60);autoReact('quiet');say(`⭐ ${lastMinute} minute${lastMinute>1?'s':''} of quiet!`);}
+  if(q<60)lastMinute=0;
+  const db=$('dbRead');if(db)db.textContent=micOK?`${curDb.toFixed(0)} dB  (${Math.round(level*100)}%)`:'no mic';
+}
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.1,(now-last)/1000);last=now;
+  readNoise(dt);updateUI(dt,now);drawFx(dt,now/1000);drawOv(now/1000);maybeDetect(now);remoteTick(now);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- seat editor ---------- */
+function dialog(html,bind){const d=$('dlg');d.innerHTML=`<div class="dbox">${html}</div>`;d.classList.add('show');bind();}
+function closeDlg(){const d=$('dlg');d.classList.remove('show');d.innerHTML='';}
+function openSeatDialog(seat){
+  dialog(`<h3>${seat.id?'Edit seat':'New seat'}</h3><input id="d_name" type="text" maxlength="40" placeholder="Student name" value="${esc(seat.name)}"><div class="bb">${seat.id?'<button id="d_del">🗑 Delete</button>':''}<button id="d_cancel">Cancel</button><button id="d_save">Save</button></div>`,()=>{
+    const inp=$('d_name');setTimeout(()=>{inp.focus();inp.select();},50);
+    const saveIt=()=>{const name=inp.value.trim()||('Seat '+(seats.length+1));
+      if(seat.id){seat.name=name;saveSeats();}else addSeat(seat.x,seat.y,name);
+      closeDlg();renderSeatbar();};
+    $('d_save').onclick=saveIt;
+    $('d_cancel').onclick=closeDlg;
+    if(seat.id)$('d_del').onclick=()=>{seats=seats.filter(s=>s!==seat);saveSeats();closeDlg();renderSeatbar();};
+    inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter')saveIt();if(e.key==='Escape')closeDlg();});
+  });
+}
+function openRosterDialog(){
+  dialog(`<h3>Roster</h3><p>Type or paste names, one per line. Then tap where each student sits, in order. Use Skip for absent students.</p><textarea id="d_roster" placeholder="Maria G.&#10;James T.&#10;Aaliyah R."></textarea><div class="bb"><button id="d_cancel">Cancel</button><button id="d_go">Start tapping</button></div>`,()=>{
+    const ta=$('d_roster');setTimeout(()=>ta.focus(),50);
+    ta.addEventListener('keydown',e=>e.stopPropagation());
+    $('d_cancel').onclick=closeDlg;
+    $('d_go').onclick=()=>{queue=ta.value.split('\n').map(s=>s.trim()).filter(Boolean);tool='seat';closeDlg();renderSeatbar();};
+  });
+}
+function openClearDialog(){
+  dialog(`<h3>Clear everything?</h3><p>This removes all ${seats.length} seat${seats.length===1?'':'s'} and ${zones.length} ignore zone${zones.length===1?'':'s'} from this browser.</p><div class="bb"><button id="d_cancel">Cancel</button><button id="d_yes">Clear all</button></div>`,()=>{
+    $('d_cancel').onclick=closeDlg;
+    $('d_yes').onclick=()=>{seats=[];zones=[];queue=[];saveSeats();closeDlg();renderSeatbar();};
+  });
+}
+function renderSeatbar(){
+  const btns=[['tool-seat','➕','Seats',tool==='seat'],['tool-zone','🚫','Ignore zone',tool==='zone'],['auto','🧍','Auto-add'],['roster','📝','Roster']];
+  if(queue.length)btns.push(['skip','⏭','Skip name'],['stopq','⏹','Stop roster']);
+  btns.push(['clear','🗑','Clear all'],['done','✅','Done']);
+  $('seatbar').innerHTML=btns.map(([id,e,t,on])=>`<button data-sb="${id}" class="${on?'on':''}"><span class="e">${e}</span><span class="t">${t}</span></button>`).join('');
+  $('seathint').textContent=queue.length?`Tap where ${queue[0]} sits (${queue.length} name${queue.length>1?'s':''} left)`
+    :tool==='zone'?'Drag a box over areas to ignore, like where you stand. Tap a box to remove it.'
+    :`Tap each student to add a seat. Tap a marker to rename or delete it. ${seats.length} seat${seats.length===1?'':'s'} so far.`;
+}
+function enterEdit(){
+  if(!camOK||!cam.videoWidth){status('Start the camera first',false);return;}
+  editing=true;tool='seat';spot=null;closeSub();hideBanner();
+  document.body.classList.add('editing');cam.style.opacity=.9;renderSeatbar();
+}
+function exitEdit(){editing=false;queue=[];drag=null;closeDlg();document.body.classList.remove('editing');applyCam();render();}
+async function autoAdd(){
+  if(detStatus!=='ready'){status(detStatus==='loading'?'Vision model is still loading…':'Vision model unavailable',false);return;}
+  status('Looking for students…');
+  const list=await scanPeople(1);
+  if(!list.length){status('No students detected');return;}
+  labelSeats(list);
+  const vw=cam.videoWidth,vh=cam.videoHeight;let n=0;
+  for(const b of list){const x=(b.x+b.w/2)/vw,y=(b.y+b.h*.45)/vh;
+    if(seats.some(s=>Math.hypot(s.x-x,s.y-y)<.04))continue;
+    addSeat(x,y,b.label);n++;}
+  status(`Added ${n} seat${n===1?'':'s'}. Tap a marker to rename it.`);renderSeatbar();
+}
+$('seatbar').addEventListener('click',e=>{
+  const b=e.target.closest('[data-sb]');if(!b)return;
+  const id=b.dataset.sb;
+  if(id==='tool-seat'){tool='seat';renderSeatbar();}
+  else if(id==='tool-zone'){tool='zone';queue=[];renderSeatbar();}
+  else if(id==='auto')autoAdd();
+  else if(id==='roster')openRosterDialog();
+  else if(id==='skip'){queue.shift();renderSeatbar();}
+  else if(id==='stopq'){queue=[];renderSeatbar();}
+  else if(id==='clear')openClearDialog();
+  else if(id==='done')exitEdit();
+});
+const editLayer=$('edit');
+editLayer.addEventListener('pointerdown',e=>{
+  if(!editing)return;e.preventDefault();
+  try{editLayer.setPointerCapture(e.pointerId);}catch(err){/* ignore */}
+  drag={x0:e.clientX,y0:e.clientY,x1:e.clientX,y1:e.clientY,moved:false};
+});
+editLayer.addEventListener('pointermove',e=>{
+  if(!drag)return;drag.x1=e.clientX;drag.y1=e.clientY;
+  if(Math.hypot(drag.x1-drag.x0,drag.y1-drag.y0)>8)drag.moved=true;
+});
+editLayer.addEventListener('pointerup',()=>{
+  if(!drag)return;const d=drag;drag=null;
+  if(tool==='zone'){
+    if(d.moved){
+      const a=fromScreen(Math.min(d.x0,d.x1),Math.min(d.y0,d.y1)),b=fromScreen(Math.max(d.x0,d.x1),Math.max(d.y0,d.y1));
+      if(b.x-a.x>.02&&b.y-a.y>.02){zones.push({x:a.x,y:a.y,w:b.x-a.x,h:b.y-a.y});saveSeats();}
+    }else{
+      const p=fromScreen(d.x0,d.y0),i=zones.findIndex(z=>p.x>=z.x&&p.x<=z.x+z.w&&p.y>=z.y&&p.y<=z.y+z.h);
+      if(i>=0){zones.splice(i,1);saveSeats();}
+    }
+    renderSeatbar();return;
+  }
+  if(d.moved)return;
+  const hit=seats.find(s=>{const p=seatScreen(s);return Math.hypot(p.x-d.x0,p.y-d.y0)<36;});
+  if(hit){openSeatDialog(hit);return;}
+  const p=fromScreen(d.x0,d.y0);
+  if(queue.length){addSeat(p.x,p.y,queue.shift());renderSeatbar();return;}
+  openSeatDialog({id:null,name:'',x:p.x,y:p.y});
+});
+editLayer.addEventListener('pointercancel',()=>{drag=null;});
+
+/* ---------- toolbar, menus, settings ---------- */
+const CAMLABEL=['Camera: Hidden','Camera: Dim','Camera: Full'];
+function applyCam(){cam.style.opacity=[0,.5,1][S.camMode];}
+const TB=[
+  {id:'pick',e:'🎯',t:'Pick Student',cls:'pickbtn',fn:pickStudent},
+  {id:'seats',e:'🪑',t:'Seats',fn:enterEdit},
+  {id:'noise',e:'🔊',t:()=>'Noise '+(S.noiseOn?'On':'Off'),on:()=>S.noiseOn,fn(){S.noiseOn=!S.noiseOn;save();render();}},
+  {id:'scene',e:'🌄',t:'Scene',fn(){sub(Object.entries(THEMES).map(([k,v])=>({l:v.emoji+' '+v.name,a:S.theme===k,fn:()=>setTheme(k)})));}},
+  {id:'char',e:'🧙',t:'Character',fn(){sub(CHARS.map((c,i)=>({l:c.m[0]+' '+c.n,a:S.char===i,fn(){S.char=i;save();setChar();charLine();render();}})));}},
+  {id:'fx',e:'✨',t:'Effects',fn(){sub([
+    {l:'🎉 Confetti',keep:1,fn:()=>confetti(W/2,H*.75,220)},
+    {l:'🎆 Fireworks',keep:1,fn:fireworks},
+    {l:'⚡ Lightning',keep:1,fn:lightning},
+    {l:'❄️ Snow',keep:1,fn:snow},
+    {l:'🧹 Clear',fn:()=>{FX=[];}}]);}},
+  {id:'phones',e:'📱',t:()=>'Phones '+(S.phonesOn?'On':'Off'),on:()=>S.phonesOn,fn(){S.phonesOn=!S.phonesOn;phoneHist=[];phones=[];save();updatePhoneBadge();render();}},
+  {id:'cam',e:'🎥',t:()=>CAMLABEL[S.camMode],fn(){S.camMode=(S.camMode+2)%3;save();applyCam();render();}},
+  {id:'set',e:'⚙️',t:'Settings',fn:togglePanel},
+  {id:'full',e:'⛶',t:'Fullscreen',fn:toggleFs}];
+function render(){
+  $('tb').innerHTML=TB.map(b=>`<button data-tb="${b.id}" class="${(b.cls||'')+(b.on&&b.on()?' on':'')}"><span class="e">${b.e}</span><span class="t">${typeof b.t==='function'?b.t():b.t}</span></button>`).join('');
+}
+let subItems=[];
+function sub(items){subItems=items;$('sub').innerHTML=items.map((it,i)=>`<button data-sub="${i}" class="${it.a?'on':''}">${it.l}</button>`).join('');}
+function closeSub(){subItems=[];$('sub').innerHTML='';}
+function toggleFs(){if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen?.();}
+function togglePanel(){const p=$('panel');p.classList.toggle('hidden');if(!p.classList.contains('hidden'))fillDevices();}
+
+$('tb').addEventListener('click',e=>{const b=e.target.closest('[data-tb]');if(!b)return;closeSub();const t=TB.find(x=>x.id===b.dataset.tb);if(t)t.fn();});
+$('sub').addEventListener('click',e=>{const b=e.target.closest('[data-sub]');if(!b)return;const it=subItems[+b.dataset.sub];if(!it)return;it.fn();if(!it.keep){closeSub();}});
+$('banner').addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;
+  if(b.dataset.act==='close'){spot=null;hideBanner();}
+  if(b.dataset.act==='again'){spot=null;pickStudent();}});
+
+const SLIDERS=[
+  ['rangeDb','Noise range (lower = more sensitive)',15,60,1,v=>v+' dB'],
+  ['warn','Yellow zone starts at',.2,.9,.05,v=>Math.round(v*100)+'%'],
+  ['loud','Red / "too loud" starts at',.4,.98,.02,v=>Math.round(v*100)+'%'],
+  ['loudSecs','Too-loud warning after',1,8,.5,v=>v+' s'],
+  ['personMin','Student detection confidence',.2,.8,.05,v=>Math.round(v*100)+'%'],
+  ['phoneMin','Phone detection confidence',.1,.7,.05,v=>Math.round(v*100)+'%'],
+  ['reactCooldown','Time between reactions',5,120,5,v=>v+' s'],
+  ['reactSecs','How long a reaction stays',2,10,1,v=>v+' s']];
+const CHECKS=[
+  ['showSeats','Show seat names on screen'],
+  ['detail','High-detail phone scan (slower, finds smaller phones)'],
+  ['phoneBoxes','Show phone locations on screen (off = count only)'],
+  ['debug','Show detection boxes (for tuning)']];
+function buildPanel(){
+  const sl=k=>SLIDERS.find(s=>s[0]===k);
+  const slider=k=>{const [key,lab,mi,ma,st,fmt]=sl(k);return `<label>${lab}: <b id="v_${key}">${fmt(S[key])}</b><input type="range" id="p_${key}" min="${mi}" max="${ma}" step="${st}" value="${S[key]}"></label>`;};
+  $('panel').innerHTML=`
+  <h2>Settings <button id="p_close" style="font-size:26px;padding:4px 10px">✕</button></h2>
+  <h3>Devices</h3>
+  <label>Camera<select id="p_cam"></select></label>
+  <label>Microphone<select id="p_mic"></select></label>
+  <h3>Noise meter</h3>
+  <div class="live">Live level: <b id="dbRead">–</b></div>
+  <button class="btn" id="p_cal">🤫 Calibrate to this quiet room</button>
+  ${slider('rangeDb')}${slider('warn')}${slider('loud')}${slider('loudSecs')}
+  <h3>Vision</h3>
+  ${slider('personMin')}${slider('phoneMin')}
+  ${CHECKS.map(([k,l])=>`<label class="chk"><input type="checkbox" id="c_${k}" ${S[k]?'checked':''}>${l}</label>`).join('')}
+  <label>Detection model<select id="p_model"><option value="lite0">Fast (EfficientDet-Lite0)</option><option value="lite2">More accurate, slower (Lite2)</option></select></label>
+  <h3>📲 iPad remote</h3>
+  <div class="live" id="remoteStatus">Not paired</div>
+  <button class="btn" id="p_pair">📲 Pair an iPad (shows a new code)</button>
+  <button class="btn" id="p_unpair">Unpair</button>
+  <label>Relay service (must match the iPad)<input type="text" id="p_relay" autocomplete="off"></label>
+  <h3>🎭 Reactions</h3>
+  <label class="chk"><input type="checkbox" id="c_reactAuto" ${S.reactAuto?'checked':''}>Pop up reactions automatically when the room gets loud or quiet</label>
+  ${slider('reactCooldown')}${slider('reactSecs')}
+  <label>Size<select id="p_reactSize"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select></label>
+  <button class="btn" id="p_addclip">➕ Add GIFs, videos, images or sounds</button>
+  <div id="cliplist"></div>
+  <p class="note">Your files stay on this device only. Built-in reactions are used for any category you haven’t added clips to. Keep clips classroom-appropriate and about the whole room, never about one student.</p>
+  <button class="btn" id="p_reset">↺ Reset settings</button>
+  <p class="note">Phone detection is a rough guide, not proof. Use the count as a nudge, not to call out a specific student. No video or audio is recorded or sent anywhere. Seat names are saved only in this browser (use 🪑 Seats → Clear all to remove them).</p>`;
+  $('p_model').value=S.model;bindExtras();
+  for(const [key,,,,,fmt] of SLIDERS){
+    $('p_'+key).addEventListener('input',e=>{S[key]=+e.target.value;$('v_'+key).textContent=fmt(S[key]);save();});}
+  for(const [k] of CHECKS)$('c_'+k).addEventListener('change',e=>{S[k]=e.target.checked;save();});
+  $('p_close').onclick=togglePanel;
+  $('p_cal').onclick=calibrate;
+  $('p_cam').onchange=async e=>{S.camId=e.target.value;save();await startCamera();fillDevices();};
+  $('p_mic').onchange=async e=>{S.micId=e.target.value;save();await startMic();fillDevices();};
+  $('p_model').onchange=e=>{S.model=e.target.value;save();initDetector();};
+  $('p_reset').onclick=()=>{Object.assign(S,DEFAULTS);save();buildPanel();applyCam();initTheme();setChar();render();fillDevices();};
+}
+
+/* auto-hide controls */
+let idleT;
+function wake(){document.querySelectorAll('.ui').forEach(e=>e.classList.remove('hidden'));clearTimeout(idleT);
+  idleT=setTimeout(()=>{if($('panel').classList.contains('hidden')){document.querySelectorAll('.ui').forEach(e=>e.classList.add('hidden'));closeSub();}},7000);}
+['pointermove','pointerdown','keydown','touchstart'].forEach(ev=>addEventListener(ev,wake,{passive:true}));
+addEventListener('keydown',e=>{
+  const tag=e.target.tagName;
+  if(tag==='SELECT'||tag==='INPUT'||tag==='TEXTAREA')return;
+  const k=e.key.toLowerCase();
+  if(k==='escape'){
+    if($('dlg').classList.contains('show'))closeDlg();
+    else if(editing)exitEdit();
+    else{spot=null;hideBanner();closeSub();if(!$('panel').classList.contains('hidden'))togglePanel();}
+    return;}
+  if(editing)return;
+  if(k===' '||k==='enter'){e.preventDefault();pickStudent();}
+  else if(k==='f')toggleFs();
+  else if(k==='n'){S.noiseOn=!S.noiseOn;save();render();}
+});
+
+/* ---------- reactions (your own GIFs / videos / images / sounds) ---------- */
+let heldUntil=0,curReact=null,reactT=0,lastReactAt=0,lastReactId={};
+const CATS=[
+  {k:'loud',e:'📢',n:'Too loud'},{k:'warn',e:'🟡',n:'Getting loud'},{k:'quiet',e:'😎',n:'Nice and quiet'},
+  {k:'pick',e:'🎯',n:'Student picked'},{k:'cheer',e:'🎉',n:'Celebrate'},{k:'oops',e:'😬',n:'Oops'},{k:'think',e:'🤔',n:'Think'}];
+const BUILTIN={
+  loud:[['🤫','Shhh!'],['🔇','Volume down!'],['🦻','Inside voices!'],['🙉','Too loud!']],
+  warn:[['👀','Getting loud…'],['📉','Turn it down a notch'],['🐌','Slow it down']],
+  quiet:[['😎','Smooth.'],['🏆','Nice and quiet!'],['🧘','Zen mode'],['👏','Great focus!']],
+  cheer:[['🎉','Let’s go!'],['🙌','Nice work!'],['🔥','On fire!'],['🏅','Legendary!']],
+  oops:[['😬','Oops!'],['🤦','Facepalm'],['🫠','Oof']],
+  think:[['🤔','Hmm…'],['🧠','Big brain time'],['📚','Think it through']]};
+let clips=[];
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('classcam_react',1);r.onupgradeneeded=()=>r.result.createObjectStore('clips',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+async function dbRun(mode,fn){const db=await idb();return new Promise((res,rej)=>{const tx=db.transaction('clips',mode);const rq=fn(tx.objectStore('clips'));
+  tx.oncomplete=()=>{db.close();res(rq&&rq.result);};tx.onerror=tx.onabort=()=>{db.close();rej(tx.error);};});}
+const dbAll=()=>dbRun('readonly',s=>s.getAll());
+const dbPut=r=>dbRun('readwrite',s=>s.put(r));
+const dbDel=id=>dbRun('readwrite',s=>s.delete(id));
+async function loadClips(){try{clips=(await dbAll())||[];}catch(e){clips=[];}clips.sort((a,b)=>a.added-b.added);renderClipList();}
+
+function clearReact(){
+  clearTimeout(reactT);const w=curReact;curReact=null;if(!w)return;
+  heldUntil=Math.min(heldUntil,performance.now()+500);
+  w.classList.add('out');
+  setTimeout(()=>{w.querySelectorAll('video,audio').forEach(m=>{try{m.pause();}catch(e){}});if(w._url)URL.revokeObjectURL(w._url);w.remove();},300);
+}
+function mountReact(w,ms,sound){
+  clearReact();
+  const wd={s:22,m:32,l:46}[S.reactSize]||32;
+  w.classList.add('reaction','size-'+(S.reactSize||'m'));
+  w.style.left=rand(3,Math.max(4,97-wd))+'vw';w.style.top=rand(8,26)+'vh';
+  $('react').appendChild(w);curReact=w;
+  const sched=t=>{clearTimeout(reactT);reactT=setTimeout(clearReact,t);if(sound)heldUntil=performance.now()+t+700;};
+  sched(ms);return sched;
+}
+function playBuiltin(cat){
+  const list=BUILTIN[cat];if(!list)return false;
+  let it;do{it=pick(list);}while(list.length>1&&it[1]===lastReactId['b'+cat]);lastReactId['b'+cat]=it[1];
+  const w=document.createElement('div');
+  w.innerHTML=`<div class="remoji">${it[0]}</div><div class="rtext">${esc(it[1])}</div>`;
+  mountReact(w,S.reactSecs*1000,false);return true;
+}
+function playClip(rec){
+  const w=document.createElement('div');const url=URL.createObjectURL(rec.blob);w._url=url;
+  const base=S.reactSecs*1000;let el,sound=false;
+  if(rec.kind==='video'){
+    el=document.createElement('video');el.src=url;el.autoplay=true;el.playsInline=true;el.muted=!!rec.mute;sound=!rec.mute;
+    w.appendChild(el);const sched=mountReact(w,base,sound);
+    el.addEventListener('loadedmetadata',()=>{if(isFinite(el.duration))sched(Math.max(base,Math.min(el.duration,12)*1000));});
+    el.play().catch(()=>{el.muted=true;el.play().catch(()=>{});});
+  }else if(rec.kind==='audio'){
+    el=document.createElement('audio');el.src=url;sound=true;
+    w.innerHTML=`<div class="remoji">🔊</div><div class="rtext">${esc(rec.name)}</div>`;w.appendChild(el);
+    const sched=mountReact(w,base,true);
+    el.addEventListener('loadedmetadata',()=>{if(isFinite(el.duration))sched(Math.min(el.duration,12)*1000+300);});
+    el.play().catch(()=>{});
+  }else{
+    el=document.createElement('img');el.src=url;el.alt='';w.appendChild(el);mountReact(w,base,false);
+  }
+}
+function playCat(cat){
+  const mine=clips.filter(c=>c.cat===cat);
+  if(mine.length){
+    let c;do{c=pick(mine);}while(mine.length>1&&c.id===lastReactId[cat]);lastReactId[cat]=c.id;playClip(c);return true;}
+  return playBuiltin(cat);
+}
+function playById(id){
+  if(typeof id!=='string')return;
+  if(id.startsWith('cat:'))return playCat(id.slice(4));
+  const c=clips.find(x=>x.id===id);if(c)playClip(c);
+}
+function autoReact(cat){
+  if(!S.reactAuto||editing)return;
+  const now=Date.now(),cd=(cat==='loud'?.5:1)*S.reactCooldown*1000;
+  if(now-lastReactAt<cd)return;
+  if(cat==='pick'&&!clips.some(c=>c.cat==='pick'))return;   // no built-in for this one
+  lastReactAt=now;playCat(cat);
+}
+
+function openAddClips(files){
+  const ok=files.filter(f=>/^(image|video|audio)\//.test(f.type)&&f.size<=40*1048576);
+  const skipped=files.length-ok.length;
+  if(!ok.length){status('Those files can’t be used (images, videos and sounds under 40 MB only)',true);return;}
+  const opts=CATS.map(k=>`<option value="${k.k}">${k.e} ${k.n}</option>`).join('');
+  const rows=ok.map((f,i)=>`<div class="drow"><input type="text" maxlength="30" data-n="${i}" value="${esc(f.name.replace(/\.[^.]+$/,'').slice(0,30))}"><select data-c="${i}">${opts}</select>${f.type.startsWith('video/')?`<label class="dsnd">🔊<input type="checkbox" data-s="${i}" checked></label>`:''}</div>`).join('');
+  dialog(`<h3>Add reactions</h3><p>Pick when each one should pop up. Keep them classroom-appropriate and about the whole room, never one student.${skipped?`<br><small>${skipped} file${skipped>1?'s':''} skipped (wrong type or over 40 MB).</small>`:''}</p>${rows}<div class="bb"><button id="d_cancel">Cancel</button><button id="d_save">Add ${ok.length}</button></div>`,()=>{
+    $('dlg').querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>e.stopPropagation()));
+    $('d_cancel').onclick=closeDlg;
+    $('d_save').onclick=async()=>{
+      const d=$('dlg');let n=0;
+      for(let i=0;i<ok.length;i++){
+        const f=ok[i],kind=f.type.split('/')[0];
+        const rec={id:'u'+Date.now().toString(36)+i+Math.random().toString(36).slice(2,5),name:d.querySelector(`[data-n="${i}"]`).value.trim()||'clip',
+          cat:d.querySelector(`[data-c="${i}"]`).value,kind,mute:kind==='video'?!d.querySelector(`[data-s="${i}"]`).checked:false,blob:f,added:Date.now()+i};
+        try{await dbPut(rec);n++;}catch(e){status('Could not save “'+rec.name+'” (storage full or blocked)',true);}
+      }
+      closeDlg();await loadClips();remoteSendState(true);if(n)status(n+' reaction'+(n>1?'s':'')+' added');
+    };
+  });
+}
+
+function renderClipList(){
+  const el=$('cliplist');if(!el)return;
+  el.innerHTML=clips.length?clips.map(c=>`<div class="crow" data-id="${esc(c.id)}"><span class="cn">${c.kind==='video'?'🎬':c.kind==='audio'?'🔊':'🖼'} ${esc(c.name)}</span><select data-cat>${CATS.map(k=>`<option value="${k.k}"${k.k===c.cat?' selected':''}>${k.e} ${k.n}</option>`).join('')}</select><button data-play>▶</button><button data-del>🗑</button></div>`).join('')
+    :'<p class="note">No clips yet. Built-in emoji reactions are used.</p>';
+}
+
+/* ---------- iPad remote (end-to-end encrypted over a public relay) ---------- */
+const R={code:'',key:null,topic:'',es:null,seen:new Set(),lastIn:0,lastOut:-1e9,timer:0,open:false,active:false,pillT:0};
+const te=new TextEncoder(),td=new TextDecoder();
+const b64=u=>{let s='';for(let i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s);};
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const hex=u=>[...u].map(x=>x.toString(16).padStart(2,'0')).join('');
+const genId=()=>hex(crypto.getRandomValues(new Uint8Array(6)));
+const ALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function genCode(){const u=crypto.getRandomValues(new Uint8Array(10));let s='';for(const x of u)s+=ALPHA[x%32];return s;}
+const fmtCode=c=>c.slice(0,5)+'-'+c.slice(5);
+async function deriveRemote(code){
+  const norm=String(code).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const base=await crypto.subtle.importKey('raw',te.encode(norm),'PBKDF2',false,['deriveBits']);
+  const bits=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:te.encode('classcam-remote-v1'),iterations:200000,hash:'SHA-256'},base,384));
+  const key=await crypto.subtle.importKey('raw',bits.slice(0,32),'AES-GCM',false,['encrypt','decrypt']);
+  return{key,topic:'cc'+hex(bits.slice(32,48))};
+}
+async function seal(obj,key){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,te.encode(JSON.stringify(obj))));
+  const out=new Uint8Array(12+ct.length);out.set(iv);out.set(ct,12);return b64(out);
+}
+async function unseal(str,key){
+  const u=unb64(str.trim());
+  return JSON.parse(td.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},key,u.slice(12))));
+}
+const relayBase=()=>String(S.relay||'https://ntfy.sh').trim().replace(/\/+$/,'');
+
+function remoteStatusText(){
+  if(!R.key)return'Not paired';
+  if(!navigator.onLine)return'Paired · TV is offline';
+  return R.active?'Paired · iPad connected':R.open?'Paired · waiting for the iPad':'Paired · connecting to relay…';
+}
+function updateRemoteUI(){const el=$('remoteStatus');if(el)el.textContent=remoteStatusText();}
+
+async function remoteStart(){
+  let code='';try{code=localStorage.getItem('classcam_pair')||'';}catch(e){}
+  if(code)await remoteConnect(code);
+}
+async function remoteConnect(code){
+  remoteClose();
+  if(!window.crypto||!crypto.subtle){const el=$('remoteStatus');if(el)el.textContent='Remote needs a secure page (https:// or file://)';return;}
+  try{
+    const d=await deriveRemote(code);R.code=code;R.key=d.key;R.topic=d.topic;
+    const es=new EventSource(relayBase()+'/'+R.topic+'/sse');R.es=es;
+    es.onopen=()=>{R.open=true;updateRemoteUI();};
+    es.onerror=()=>{R.open=false;updateRemoteUI();};
+    es.onmessage=ev=>onRemoteMsg(ev.data);
+  }catch(e){R.key=null;const el=$('remoteStatus');if(el)el.textContent='Could not start the remote';}
+  updateRemoteUI();
+}
+function remoteClose(){if(R.es)R.es.close();R.es=null;R.open=false;R.active=false;R.lastIn=0;}
+async function remoteSend(obj){
+  if(!R.key)return;
+  try{
+    const body=await seal({...obj,t:Date.now(),id:genId(),from:'tv'},R.key);
+    await fetch(relayBase()+'/'+R.topic,{method:'POST',body});
+  }catch(e){}
+}
+function remoteSendState(force){
+  if(!R.key||!R.es||!R.active&&!force)return;
+  const now=performance.now(),min=force?2500:8000;
+  if(now-R.lastOut<min){
+    if(force&&!R.timer)R.timer=setTimeout(()=>{R.timer=0;remoteSendState(true);},min-(now-R.lastOut)+50);
+    return;}
+  R.lastOut=now;remoteSend({k:'state',...stateObj()});
+}
+function remoteTick(){
+  if(!R.key)return;
+  const act=Date.now()-R.lastIn<75000;
+  if(act!==R.active){R.active=act;updateRemoteUI();
+    if(act){const p=$('remotePill');p.textContent='📲 iPad connected';p.classList.add('show');clearTimeout(R.pillT);R.pillT=setTimeout(()=>p.classList.remove('show'),3000);}}
+  if(act)remoteSendState(false);
+}
+function stateObj(){
+  const o={v:1,th:S.theme,themes:Object.entries(THEMES).map(([k,v])=>[k,v.emoji,v.name]),
+    ch:S.char,chars:CHARS.map(c=>[c.m[0],c.n]),noise:S.noiseOn,ph:S.phonesOn,phn:S.phonesOn?phones.length:null,
+    cam:S.camMode,lvl:Math.round(level*100),mood,
+    pk:spot&&spot.mode==='final'?spot.label:null,busy:picking,ra:S.reactAuto,
+    cats:CATS.map(c=>[c.k,c.e,c.n]),items:[]};
+  for(const c of clips){
+    o.items.push([c.id,String(c.name).slice(0,18),c.cat]);
+    if(JSON.stringify(o).length>2600){o.items.pop();break;}
+  }
+  return o;
+}
+async function onRemoteMsg(raw){
+  let m;
+  try{const j=JSON.parse(raw);if(j.event!=='message'||!j.message)return;m=await unseal(j.message,R.key);}catch(e){return;}   // wrong key or junk: ignore
+  if(!m||m.from!=='ipad'||typeof m.id!=='string'||R.seen.has(m.id))return;
+  if(Math.abs(Date.now()-m.t)>90000)return;
+  R.seen.add(m.id);if(R.seen.size>200)R.seen.delete(R.seen.values().next().value);
+  R.lastIn=Date.now();
+  const tb=id=>{const b=TB.find(x=>x.id===id);if(b)b.fn();};
+  switch(m.c){
+    case'pick':pickStudent();break;
+    case'again':spot=null;pickStudent();break;
+    case'done':spot=null;hideBanner();break;
+    case'scene':if(THEMES[m.v]){setTheme(m.v);render();}break;
+    case'char':{const i=+m.v;if(CHARS[i]){S.char=i;save();setChar();charLine();render();}break;}
+    case'fx':{const f={confetti:()=>confetti(W/2,H*.75,220),fireworks,lightning,snow,clear:()=>{FX=[];}}[m.v];if(f)f();break;}
+    case'noise':tb('noise');break;
+    case'phones':tb('phones');break;
+    case'cam':tb('cam');break;
+    case'cal':calibrate();break;
+    case'react':playById(m.v);break;
+    case'rclear':clearReact();break;
+    case'rauto':S.reactAuto=!S.reactAuto;save();{const c=$('c_reactAuto');if(c)c.checked=S.reactAuto;}break;
+    case'ping':case'hello':break;
+    default:return;
+  }
+  remoteSendState(true);
+}
+function openPairDialog(){
+  if(!window.crypto||!crypto.subtle){status('Remote needs https:// or file:// to work',true);return;}
+  const code=genCode();
+  dialog(`<h3>📲 Pair an iPad</h3><p>On the iPad, open the ClassCam Remote page and type this code:</p><div style="font-size:clamp(34px,6vw,72px);font-weight:900;letter-spacing:.12em;text-align:center;margin:14px 0;font-family:monospace">${fmtCode(code)}</div><p><small>Anyone with this code can control the screen. Use Unpair in Settings to cut it off. Nothing is sent in readable form; the relay only sees encrypted data.</small></p><div class="bb"><button id="d_cancel">Cancel</button><button id="d_ok">Use this code</button></div>`,()=>{
+    $('d_cancel').onclick=closeDlg;
+    $('d_ok').onclick=async()=>{try{localStorage.setItem('classcam_pair',code);}catch(e){}closeDlg();updateRemoteUI();await remoteConnect(code);};
+  });
+}
+function unpair(){try{localStorage.removeItem('classcam_pair');}catch(e){}remoteClose();R.key=null;R.code='';updateRemoteUI();status('iPad unpaired');}
+
+function bindExtras(){
+  $('p_pair').onclick=openPairDialog;
+  $('p_unpair').onclick=unpair;
+  const rl=$('p_relay');rl.value=S.relay;rl.onchange=()=>{S.relay=rl.value.trim()||DEFAULTS.relay;rl.value=S.relay;save();if(R.key)remoteConnect(R.code);};
+  $('c_reactAuto').onchange=e=>{S.reactAuto=e.target.checked;save();};
+  const rs=$('p_reactSize');rs.value=S.reactSize;rs.onchange=()=>{S.reactSize=rs.value;save();};
+  $('p_addclip').onclick=()=>$('clipfile').click();
+  const cl=$('cliplist');
+  cl.onclick=async e=>{
+    const row=e.target.closest('.crow');if(!row)return;const c=clips.find(x=>x.id===row.dataset.id);if(!c)return;
+    if(e.target.closest('[data-play]'))playClip(c);
+    const del=e.target.closest('[data-del]');
+    if(del){if(del.dataset.sure){try{await dbDel(c.id);}catch(x){}await loadClips();remoteSendState(true);}
+      else{del.dataset.sure=1;del.textContent='Sure?';setTimeout(()=>{del.dataset.sure='';del.textContent='🗑';},2500);}}
+  };
+  cl.onchange=async e=>{
+    const row=e.target.closest('.crow');if(!row||!e.target.matches('[data-cat]'))return;
+    const c=clips.find(x=>x.id===row.dataset.id);if(!c)return;c.cat=e.target.value;try{await dbPut(c);}catch(x){}remoteSendState(true);
+  };
+  renderClipList();updateRemoteUI();
+}
+$('clipfile').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length)openAddClips(f);});
+loadClips();
+
+/* ---------- boot ---------- */
+function resize(){
+  const d=window.devicePixelRatio||1,fxs=1,ovs=Math.min(d,1.5);   // keep canvases small so TVs stay smooth
+  W=innerWidth;H=innerHeight;
+  fx.width=W*fxs;fx.height=H*fxs;ov.width=W*ovs;ov.height=H*ovs;
+  fctx.setTransform(fxs,0,0,fxs,0,0);octx.setTransform(ovs,0,0,ovs,0,0);initTheme();
+}
+addEventListener('resize',resize);
+resize();buildPanel();applyCam();setChar();render();wake();
+requestAnimationFrame(frame);
+
+$('go').addEventListener('click',async()=>{
+  $('go').disabled=true;$('startmsg').textContent='Requesting camera and microphone…';
+  if(!navigator.mediaDevices?.getUserMedia){$('startmsg').textContent='This browser blocks camera access here. Try Chrome or Edge, or open the page over https.';$('go').disabled=false;return;}
+  await startCamera();await startMic();
+  fillDevices();
+  if(!camOK&&!micOK){
+    const hint=n=>(n==='NotAllowedError'||n==='SecurityError')?'Permission was blocked. Allow Camera and Microphone in the address-bar site settings AND in the TV Settings > Apps > Chromium > Permissions.'
+      :(n==='NotFoundError'||n==='OverconstrainedError')?'The browser found no camera or mic. Try plugging in a USB webcam.'
+      :(n==='NotReadableError'||n==='AbortError')?'Another app may be using the camera. Close any app using it (video calls, the TV camera app) and try again.':'';
+    $('startmsg').textContent=`Could not reach the camera or microphone.\nCamera: ${camErr||'ok'}   Mic: ${micErr||'ok'}\n${hint(camErr)||hint(micErr)}`;
+    $('go').disabled=false;return;}
+  $('start').classList.add('gone');
+  initDetector();remoteStart();
+  if(micOK)setTimeout(()=>status('Tip: open ⚙️ Settings and tap Calibrate while the room is quiet'),2500);
+});
+</script>
+</body>
+</html>
